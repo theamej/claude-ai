@@ -26,7 +26,8 @@ SetWorkingDir, %A_ScriptDir%
 
 ; ---- Settings you can change ----
 SaveFolder := "C:\Users\theam\OneDrive\Documents\Claude Code\ai visibility screenshots"
-ImageFormat := "png"   ; "png" or "jpg"
+ImageFormat := "png"        ; "png" or "jpg" (used when you don't type your own extension)
+PromptForFileName := true   ; true = ask for a name each time, false = fully automatic
 ; ----------------------------------
 
 if !FileExist(SaveFolder)
@@ -59,10 +60,35 @@ FileAppend, %HelperScript%, %HelperPath%
 TrayTip, Screenshot Auto-Save, Running. Press Print Screen (or Alt+Print Screen for the active window) to save a screenshot to:`n%SaveFolder%, 4, 1
 return
 
-MakeFilePath() {
-    global SaveFolder, ImageFormat
+DefaultName() {
     FormatTime, stamp,, yyyy-MM-dd_HH-mm-ss
-    return SaveFolder . "\Screenshot_" . stamp . "." . ImageFormat
+    return "Screenshot_" . stamp
+}
+
+; Turns whatever the user typed (or the default) into a full, safe, unique path.
+BuildPath(userName) {
+    global SaveFolder, ImageFormat
+    userName := Trim(userName)
+    if (userName = "")
+        userName := DefaultName()
+
+    ; Windows forbids these characters in file names.
+    userName := RegExReplace(userName, "[\\/:*?""<>|]", "_")
+
+    ; Respect an extension the user typed themselves; otherwise use the default format.
+    if RegExMatch(userName, "i)\.(png|jpe?g)$")
+        fullName := userName
+    else
+        fullName := userName . "." . ImageFormat
+
+    SplitPath, fullName, , , ext, nameNoExt
+    path := SaveFolder . "\" . fullName
+    n := 1
+    while FileExist(path) {
+        n += 1
+        path := SaveFolder . "\" . nameNoExt . " (" . n . ")." . ext
+    }
+    return path
 }
 
 SaveClipboardTo(path) {
@@ -70,11 +96,28 @@ SaveClipboardTo(path) {
     RunWait, powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%HelperPath%" "%path%",, Hide
 }
 
+; Shows the "save as" prompt (pre-filled with the timestamp name) and returns the
+; chosen path, or "" if the user cancelled.
+PromptAndBuildPath() {
+    global PromptForFileName
+    suggested := DefaultName()
+    if !PromptForFileName
+        return BuildPath(suggested)
+    InputBox, userName, Save Screenshot, Enter a file name (extension optional):, , 400, 130, , , , , %suggested%
+    if ErrorLevel
+        return ""
+    return BuildPath(userName)
+}
+
 ; Plain Print Screen: full-screen capture. The leading ~ lets Windows still do
 ; its normal clipboard copy — this script just persists that image to a file.
 ~PrintScreen::
     Sleep, 150
-    path := MakeFilePath()
+    path := PromptAndBuildPath()
+    if (path = "") {
+        TrayTip, Screenshot Auto-Save, Cancelled — nothing saved., 2, 1
+        return
+    }
     SaveClipboardTo(path)
     if FileExist(path)
         TrayTip, Screenshot saved, %path%, 2, 1
@@ -85,7 +128,11 @@ return
 ; Alt+Print Screen: active-window capture, same idea.
 ~!PrintScreen::
     Sleep, 150
-    path := MakeFilePath()
+    path := PromptAndBuildPath()
+    if (path = "") {
+        TrayTip, Screenshot Auto-Save, Cancelled — nothing saved., 2, 1
+        return
+    }
     SaveClipboardTo(path)
     if FileExist(path)
         TrayTip, Screenshot saved, %path%, 2, 1

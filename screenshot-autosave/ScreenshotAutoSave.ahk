@@ -25,7 +25,7 @@
 SetWorkingDir, %A_ScriptDir%
 
 ; ---- Settings you can change ----
-SaveFolder := A_MyPictures . "\Screenshots"
+SaveFolder := "C:\Users\theam\OneDrive\Documents\Claude Code\ai visibility screenshots"
 ImageFormat := "png"   ; "png" or "jpg"
 ; ----------------------------------
 

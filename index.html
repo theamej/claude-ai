@@ -212,6 +212,16 @@
     font: inherit; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     width: 140px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 5px; padding: 5px 7px; color: var(--text-primary);
   }
+  .btn.small.answered { border-color: var(--good); color: var(--good); background: transparent; }
+  tr.answer-row td { padding: 14px 16px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .answer-box { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+  .answer-textarea {
+    font: inherit; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px;
+    color: var(--text-primary); resize: vertical; line-height: 1.5;
+  }
+  .answer-summary { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .toggle.auto { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
   .toggle-row { display: flex; gap: 4px; }
   .toggle {
     appearance: none; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer;
@@ -268,8 +278,11 @@
       <div class="hint">Same fields as your spreadsheet's Setup tab. Everything below regenerates automatically as you type.</div>
       <div class="field-grid">
         <label class="field">Client Name <input id="s-clientName" type="text" placeholder="e.g. GEM Family Law" /></label>
+        <label class="field">Client Website <span class="note">used to detect citations</span><input id="s-clientWebsite" type="text" placeholder="e.g. gemfamilylaw.com" /></label>
         <label class="field">Competitor 1 <input id="s-competitor1" type="text" placeholder="e.g. Griffiths Law" /></label>
+        <label class="field">Competitor 1 Website <input id="s-competitor1Website" type="text" placeholder="e.g. griffithslaw.com" /></label>
         <label class="field">Competitor 2 <input id="s-competitor2" type="text" placeholder="e.g. The Harris Law Firm" /></label>
+        <label class="field">Competitor 2 Website <input id="s-competitor2Website" type="text" placeholder="e.g. harrislawfirm.com" /></label>
         <label class="field">Service / Niche <input id="s-service" type="text" placeholder="e.g. family law" /></label>
         <label class="field">City / Region <input id="s-city" type="text" placeholder="e.g. Denver, CO" /></label>
         <label class="field">Audit Date <input id="s-auditDate" type="date" /></label>
@@ -340,6 +353,7 @@
   var DEFAULT_STATE = {
     setup: {
       clientName: "", competitor1: "", competitor2: "",
+      clientWebsite: "", competitor1Website: "", competitor2Website: "",
       service: "", city: "", auditDate: "", preparedBy: ""
     },
     platforms: ["ChatGPT", "Gemini", "Perplexity", "Google AI Overview"],
@@ -387,6 +401,14 @@
   var state = loadState();
   var activeTab = "setup";
   var editingShotKey = null;
+  var expandedAnswerKey = null;
+
+  var RECOMMEND_PHRASES = [
+    "i recommend", "i'd recommend", "we recommend", "highly recommend", "strongly recommend",
+    "strongly suggest", "best option", "best choice", "top choice", "top pick", "top-rated",
+    "great option", "great choice", "would suggest", "i suggest", "go with", "worth considering",
+    "stands out", "one of the best", "solid choice", "great choice"
+  ];
 
   function loadState() {
     try {
@@ -422,6 +444,15 @@
       : key === "comp1" ? state.setup.competitor1
       : state.setup.competitor2;
     return (raw && raw.trim()) ? raw.trim() : ENTITY_META[key].fallback;
+  }
+
+  function entityWebsite(key) {
+    var raw = key === "client" ? state.setup.clientWebsite
+      : key === "comp1" ? state.setup.competitor1Website
+      : state.setup.competitor2Website;
+    if (!raw || !raw.trim()) return null;
+    var v = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+    return v || null;
   }
 
   function fillTemplate(tpl, businessName, otherName) {
@@ -497,6 +528,72 @@
       '</div>';
   }
 
+  function analyzeAnswerText(entityKey, row, text) {
+    var entry = getEntry(entityKey, row.qi, row.platform);
+    entry.answerText = text;
+
+    var name = entityName(entityKey);
+    var lowerText = text.toLowerCase();
+    var lowerName = name.toLowerCase();
+    var mentionIndex = lowerText.indexOf(lowerName);
+    entry.mentioned = mentionIndex !== -1 ? 1 : 0;
+
+    var website = entityWebsite(entityKey);
+    var citedMatch = null;
+    if (website && lowerText.indexOf(website) !== -1) {
+      citedMatch = website;
+    } else {
+      var urlMatch = text.match(/https?:\/\/[^\s)>\]]+|www\.[^\s)>\]]+/i);
+      if (urlMatch && mentionIndex !== -1) citedMatch = urlMatch[0];
+    }
+    entry.cited = citedMatch ? 1 : 0;
+    entry.citedMatch = citedMatch || "";
+
+    var windowText = lowerText;
+    if (mentionIndex !== -1) {
+      var start = Math.max(0, mentionIndex - 200);
+      var end = Math.min(lowerText.length, mentionIndex + lowerName.length + 200);
+      windowText = lowerText.slice(start, end);
+    }
+    var foundPhrase = null;
+    for (var i = 0; i < RECOMMEND_PHRASES.length; i++) {
+      if (windowText.indexOf(RECOMMEND_PHRASES[i]) !== -1) { foundPhrase = RECOMMEND_PHRASES[i]; break; }
+    }
+    entry.recommended = foundPhrase ? 1 : 0;
+    entry.recommendedAuto = !!foundPhrase;
+    entry.recPhrase = foundPhrase || "";
+
+    saveState();
+  }
+
+  function answerKey(entityKey, qi, platform) { return shotKey(entityKey, qi, platform); }
+
+  function renderAnswerCell(entityKey, row, entry) {
+    var has = !!(entry.answerText && entry.answerText.trim());
+    return '<button type="button" class="btn small' + (has ? " answered" : "") + '" data-paste-toggle data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '">' +
+      (has ? "&#10003; Answer pasted" : "+ Paste answer") + '</button>';
+  }
+
+  function renderAnswerRow(entityKey, row, entry, colCount) {
+    var text = entry.answerText || "";
+    var summary = "";
+    if (entry.answerText) {
+      summary = 'Detected — Mentioned: <strong>' + (entry.mentioned ? "Yes" : "No") + '</strong> · ' +
+        'Cited: <strong>' + (entry.cited ? "Yes" : "No") + '</strong>' + (entry.citedMatch ? " (matched " + escapeHtml(entry.citedMatch) + ")" : "") + ' · ' +
+        'Recommended: <strong>' + (entry.recommended ? "Yes" : "No") + '</strong>' + (entry.recPhrase ? ' (phrase: "' + escapeHtml(entry.recPhrase) + '")' : "") +
+        '<br />Accurate still needs your judgment — set it with the toggle once you\'ve read the answer.';
+    }
+    return '<tr class="answer-row"><td colspan="' + colCount + '">' +
+      '<div class="answer-box">' +
+      '<textarea class="answer-textarea" data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" placeholder="Paste the AI\'s full answer here…" rows="5">' + escapeHtml(text) + '</textarea>' +
+      '<div class="btn-row">' +
+      '<button type="button" class="btn small primary" data-analyze-answer data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '">Analyze &amp; fill</button>' +
+      '<button type="button" class="btn small ghost" data-close-answer>Close</button>' +
+      '</div>' +
+      (summary ? '<div class="answer-summary">' + summary + '</div>' : "") +
+      '</div></td></tr>';
+  }
+
   // ---------- rendering ----------
 
   function cssVarColor(name) {
@@ -537,8 +634,11 @@
 
   function renderSetupValues() {
     document.getElementById("s-clientName").value = state.setup.clientName;
+    document.getElementById("s-clientWebsite").value = state.setup.clientWebsite;
     document.getElementById("s-competitor1").value = state.setup.competitor1;
+    document.getElementById("s-competitor1Website").value = state.setup.competitor1Website;
     document.getElementById("s-competitor2").value = state.setup.competitor2;
+    document.getElementById("s-competitor2Website").value = state.setup.competitor2Website;
     document.getElementById("s-service").value = state.setup.service;
     document.getElementById("s-city").value = state.setup.city;
     document.getElementById("s-auditDate").value = state.setup.auditDate;
@@ -570,7 +670,7 @@
   }
 
   function bindSetupEvents() {
-    var textFields = ["clientName", "competitor1", "competitor2", "service", "city", "auditDate", "preparedBy"];
+    var textFields = ["clientName", "clientWebsite", "competitor1", "competitor1Website", "competitor2", "competitor2Website", "service", "city", "auditDate", "preparedBy"];
     textFields.forEach(function (f) {
       document.getElementById("s-" + f).addEventListener("input", function (e) {
         state.setup[f] = e.target.value;
@@ -646,26 +746,33 @@
     if (rows.length === 0) {
       html += '<div class="empty-note">Fill in Setup to generate queries.</div>';
     } else {
+      var colCount = 10;
       html += '<div class="grid-scroll"><table class="grid"><thead><tr>' +
-        '<th>#</th><th>Query</th><th>Platform</th><th>Mentioned?</th><th>Recommended?</th><th>Accurate?</th><th>Cited?</th><th>Score</th><th>Screenshot file</th>' +
+        '<th>#</th><th>Query</th><th>Platform</th><th>Answer</th><th>Mentioned?</th><th>Recommended?</th><th>Accurate?</th><th>Cited?</th><th>Score</th><th>Screenshot file</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
         var entry = getEntry(entityKey, r.qi, r.platform);
         var sc = rowScore(entry);
+        var recLabel = entry.recommended ? "Yes ×2" : "No";
+        if (entry.recommended && entry.recommendedAuto) recLabel = "Yes ×2 (auto)";
         html += '<tr' + (r.isFirstOfGroup ? ' class="group-start"' : '') + '>';
         html += '<td class="qnum">' + r.qnum + '</td>';
         html += '<td class="qtext">' + (r.isFirstOfGroup ? escapeHtml(r.query) : '<span class="fade">' + escapeHtml(r.query) + '</span>') + '</td>';
         html += '<td class="platform">' + escapeHtml(r.platform) + '</td>';
+        html += '<td>' + renderAnswerCell(entityKey, r, entry) + '</td>';
         html += '<td><button type="button" class="toggle" data-field="mentioned" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.mentioned + '">' + (entry.mentioned ? "Yes" : "No") + '</button></td>';
-        html += '<td><button type="button" class="toggle" data-field="recommended" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.recommended + '" title="Worth 2 points">' + (entry.recommended ? "Yes ×2" : "No") + '</button></td>';
+        html += '<td><button type="button" class="toggle' + (entry.recommendedAuto ? " auto" : "") + '" data-field="recommended" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.recommended + '" title="Worth 2 points">' + recLabel + '</button></td>';
         html += '<td>' + triToggle(entityKey, r.qi, r.platform, entry.accurate) + '</td>';
         html += '<td><button type="button" class="toggle" data-field="cited" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.cited + '">' + (entry.cited ? "Yes" : "No") + '</button></td>';
         html += '<td class="score" style="color:' + (sc < 0 ? "var(--critical)" : sc >= 4 ? "var(--good)" : "inherit") + '">' + sc + '</td>';
         html += '<td class="shot">' + renderShotCell(entityKey, r, entry) + '</td>';
         html += '</tr>';
+        if (expandedAnswerKey === answerKey(entityKey, r.qi, r.platform)) {
+          html += renderAnswerRow(entityKey, r, entry, colCount);
+        }
       });
       html += '</tbody></table></div>';
-      html += '<div class="legend-note">Mentioned/Cited: 1 or 0. Recommended: 1 or 0 (counts double). Accurate: Wrong −1 · N/A 0 · Correct 1. Max per row = 5. Click a Screenshot file name to copy it (✎ to rename before saving your screenshot).</div>';
+      html += '<div class="legend-note">Paste an AI answer to auto-fill Mentioned &amp; Cited and suggest Recommended. Accurate always needs your own judgment. Recommended: counts double toward the max-5 score. Click a Screenshot file name to copy it (✎ to rename).</div>';
     }
     html += '</div>';
     panel.innerHTML = html;
@@ -726,6 +833,32 @@
         if (input) { input.focus(); input.select(); }
         return;
       }
+      var pasteToggle = e.target.closest("[data-paste-toggle]");
+      if (pasteToggle) {
+        var pKey = answerKey(entityKey, pasteToggle.getAttribute("data-qi"), pasteToggle.getAttribute("data-platform"));
+        expandedAnswerKey = expandedAnswerKey === pKey ? null : pKey;
+        renderEntityPanel(entityKey);
+        var ta = panel.querySelector(".answer-textarea");
+        if (ta && expandedAnswerKey === pKey) ta.focus();
+        return;
+      }
+      var closeAnswer = e.target.closest("[data-close-answer]");
+      if (closeAnswer) {
+        expandedAnswerKey = null;
+        renderEntityPanel(entityKey);
+        return;
+      }
+      var analyzeBtn = e.target.closest("[data-analyze-answer]");
+      if (analyzeBtn) {
+        var aQi = analyzeBtn.getAttribute("data-qi");
+        var aPlatform = analyzeBtn.getAttribute("data-platform");
+        var textarea = panel.querySelector('.answer-textarea[data-qi="' + aQi + '"][data-platform="' + CSS.escape(aPlatform) + '"]');
+        var text = textarea ? textarea.value : "";
+        if (!text.trim()) return;
+        analyzeAnswerText(entityKey, { qi: aQi, platform: aPlatform }, text);
+        renderEntityPanel(entityKey);
+        return;
+      }
       var btn = e.target.closest(".toggle");
       if (!btn) {
         var copyBtn = e.target.closest("[data-copy-entity]");
@@ -747,6 +880,7 @@
         }
       } else {
         toggleEntry[field] = toggleEntry[field] ? 0 : 1;
+        if (field === "recommended") toggleEntry.recommendedAuto = false;
       }
       saveState();
       renderEntityPanel(entityKey);

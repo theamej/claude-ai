@@ -321,6 +321,28 @@
     </div>
 
     <div class="card">
+      <h2>Claude API (optional)</h2>
+      <div class="hint">
+        Lets "Analyze &amp; fill" ask Claude to judge Recommended by meaning, not just keywords —
+        catches phrasing the built-in heuristic misses, and phrases like "would NOT recommend."
+        Accurate always stays manual; there's no ground truth here to fact-check against.
+        <br />Your key is stored only in this browser (never included in backups) and is sent
+        directly from your browser to Anthropic. <strong>This only works when you open this file
+        yourself outside the chat preview</strong> — the hosted artifact link blocks the network
+        call for security. Leave blank to keep using the free offline keyword heuristic.
+      </div>
+      <div class="field-grid">
+        <label class="field">Anthropic API key
+          <input id="s-apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
+        </label>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn small" id="btn-toggle-key-visibility" type="button">Show key</button>
+        <button class="btn small ghost" id="btn-clear-key" type="button">Clear key</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="flex-between">
         <div>
           <h2>Backup</h2>
@@ -402,6 +424,16 @@
   var activeTab = "setup";
   var editingShotKey = null;
   var expandedAnswerKey = null;
+  var analyzingKey = null;
+  var API_KEY_STORAGE = "aiVisibilityTracker_apiKey_v1";
+
+  function getApiKey() {
+    return (localStorage.getItem(API_KEY_STORAGE) || "").trim();
+  }
+  function setApiKey(key) {
+    if (key) localStorage.setItem(API_KEY_STORAGE, key);
+    else localStorage.removeItem(API_KEY_STORAGE);
+  }
 
   var RECOMMEND_PHRASES = [
     "i recommend", "i'd recommend", "we recommend", "highly recommend", "strongly recommend",
@@ -562,11 +594,71 @@
     entry.recommended = foundPhrase ? 1 : 0;
     entry.recommendedAuto = !!foundPhrase;
     entry.recPhrase = foundPhrase || "";
+    entry.recSource = "heuristic";
+    entry.recError = "";
 
     saveState();
   }
 
   function answerKey(entityKey, qi, platform) { return shotKey(entityKey, qi, platform); }
+
+  async function callClaudeForRecommendation(businessName, text) {
+    var key = getApiKey();
+    var resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        system: "You audit AI search-assistant answers for a local business visibility report. Given the exact text of an assistant's answer and a specific business name, decide whether the answer ACTIVELY RECOMMENDS that business as a good choice — not a neutral mention, and not a case where a different business is preferred instead or this one is advised against. Reply with strict JSON only, no other text: {\"recommended\": boolean, \"reason\": \"<=12 words\"}."
+        ,
+        messages: [
+          { role: "user", content: "Business name: " + businessName + "\n\nAnswer text:\n" + text }
+        ]
+      })
+    });
+    if (!resp.ok) {
+      var errBody = await resp.text().catch(function () { return ""; });
+      var msg = "HTTP " + resp.status;
+      try { msg += ": " + (JSON.parse(errBody).error || {}).message; } catch (e) { if (errBody) msg += ": " + errBody.slice(0, 160); }
+      throw new Error(msg);
+    }
+    var data = await resp.json();
+    var textOut = (data.content && data.content[0] && data.content[0].text) || "";
+    var parsed;
+    try { parsed = JSON.parse(textOut); } catch (e) {
+      var match = textOut.match(/\{[\s\S]*\}/);
+      if (match) { try { parsed = JSON.parse(match[0]); } catch (e2) { /* fall through */ } }
+    }
+    if (!parsed || typeof parsed.recommended !== "boolean") throw new Error("Unexpected response format");
+    return parsed;
+  }
+
+  async function refineWithClaude(entityKey, row, text) {
+    var key = answerKey(entityKey, row.qi, row.platform);
+    analyzingKey = key;
+    renderEntityPanel(entityKey);
+    var entry = getEntry(entityKey, row.qi, row.platform);
+    try {
+      var parsed = await callClaudeForRecommendation(entityName(entityKey), text);
+      entry.recommended = parsed.recommended ? 1 : 0;
+      entry.recommendedAuto = true;
+      entry.recSource = "claude";
+      entry.recPhrase = parsed.reason || "";
+      entry.recError = "";
+    } catch (err) {
+      entry.recSource = "claude-error";
+      entry.recError = err && err.message ? err.message : String(err);
+    }
+    saveState();
+    analyzingKey = null;
+    renderEntityPanel(entityKey);
+  }
 
   function renderAnswerCell(entityKey, row, entry) {
     var has = !!(entry.answerText && entry.answerText.trim());
@@ -576,18 +668,28 @@
 
   function renderAnswerRow(entityKey, row, entry, colCount) {
     var text = entry.answerText || "";
+    var key = answerKey(entityKey, row.qi, row.platform);
+    var isAnalyzing = analyzingKey === key;
     var summary = "";
     if (entry.answerText) {
+      var recBit;
+      if (entry.recSource === "claude") {
+        recBit = 'Recommended: <strong>' + (entry.recommended ? "Yes" : "No") + '</strong> — Claude: "' + escapeHtml(entry.recPhrase || "") + '"';
+      } else if (entry.recSource === "claude-error") {
+        recBit = 'Recommended: <strong>' + (entry.recommended ? "Yes" : "No") + '</strong> (keyword fallback — Claude check failed: ' + escapeHtml(entry.recError || "unknown error") + ')';
+      } else {
+        recBit = 'Recommended: <strong>' + (entry.recommended ? "Yes" : "No") + '</strong>' + (entry.recPhrase ? ' (phrase: "' + escapeHtml(entry.recPhrase) + '")' : "");
+      }
       summary = 'Detected — Mentioned: <strong>' + (entry.mentioned ? "Yes" : "No") + '</strong> · ' +
         'Cited: <strong>' + (entry.cited ? "Yes" : "No") + '</strong>' + (entry.citedMatch ? " (matched " + escapeHtml(entry.citedMatch) + ")" : "") + ' · ' +
-        'Recommended: <strong>' + (entry.recommended ? "Yes" : "No") + '</strong>' + (entry.recPhrase ? ' (phrase: "' + escapeHtml(entry.recPhrase) + '")' : "") +
+        recBit +
         '<br />Accurate still needs your judgment — set it with the toggle once you\'ve read the answer.';
     }
     return '<tr class="answer-row"><td colspan="' + colCount + '">' +
       '<div class="answer-box">' +
-      '<textarea class="answer-textarea" data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" placeholder="Paste the AI\'s full answer here…" rows="5">' + escapeHtml(text) + '</textarea>' +
+      '<textarea class="answer-textarea" data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" placeholder="Paste the AI\'s full answer here…" rows="5"' + (isAnalyzing ? " disabled" : "") + '>' + escapeHtml(text) + '</textarea>' +
       '<div class="btn-row">' +
-      '<button type="button" class="btn small primary" data-analyze-answer data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '">Analyze &amp; fill</button>' +
+      '<button type="button" class="btn small primary" data-analyze-answer data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '"' + (isAnalyzing ? " disabled" : "") + '>' + (isAnalyzing ? "Asking Claude…" : "Analyze &amp; fill") + '</button>' +
       '<button type="button" class="btn small ghost" data-close-answer>Close</button>' +
       '</div>' +
       (summary ? '<div class="answer-summary">' + summary + '</div>' : "") +
@@ -646,6 +748,7 @@
     document.getElementById("s-genericQueries").value = state.genericQueries.join("\n");
     document.getElementById("s-brandedTemplates").value = state.brandedTemplates.join("\n");
     document.getElementById("s-comparisonEnabled").checked = !!state.comparisonEnabled;
+    document.getElementById("s-apiKey").value = getApiKey();
     renderPlatformChips();
   }
 
@@ -706,6 +809,21 @@
       document.getElementById("import-file-input").click();
     });
     document.getElementById("import-file-input").addEventListener("change", importJSON);
+
+    document.getElementById("s-apiKey").addEventListener("input", function (e) {
+      setApiKey(e.target.value.trim());
+    });
+    document.getElementById("btn-toggle-key-visibility").addEventListener("click", function (e) {
+      var input = document.getElementById("s-apiKey");
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      e.target.textContent = showing ? "Show key" : "Hide key";
+    });
+    document.getElementById("btn-clear-key").addEventListener("click", function () {
+      setApiKey("");
+      document.getElementById("s-apiKey").value = "";
+      flashSaveText("API key cleared");
+    });
   }
 
   function renderEntityPanel(entityKey) {
@@ -856,7 +974,11 @@
         var text = textarea ? textarea.value : "";
         if (!text.trim()) return;
         analyzeAnswerText(entityKey, { qi: aQi, platform: aPlatform }, text);
-        renderEntityPanel(entityKey);
+        if (getApiKey()) {
+          refineWithClaude(entityKey, { qi: aQi, platform: aPlatform }, text);
+        } else {
+          renderEntityPanel(entityKey);
+        }
         return;
       }
       var btn = e.target.closest(".toggle");

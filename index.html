@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Visibility Audit — Score Entry</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #F5F6F5;
+    --surface: #FFFFFF;
+    --surface-2: #EDF0EF;
+    --border: #DCE2E1;
+    --text-primary: #101514;
+    --text-secondary: #4B5957;
+    --text-muted: #808F8D;
+    --accent: #2B4570;
+    --accent-strong: #1C2F4E;
+    --accent-ink: #FFFFFF;
+    --good: #0ca30c;
+    --warning: #b8790f;
+    --critical: #d03b3b;
+    --client: #2a78d6;
+    --comp1: #eb6834;
+    --comp2: #1baf7a;
+    --shadow: 0 1px 2px rgba(16,21,20,0.06), 0 4px 14px rgba(16,21,20,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --bg: #0D1211;
+      --surface: #171E1D;
+      --surface-2: #1E2725;
+      --border: #2C3634;
+      --text-primary: #F2F5F4;
+      --text-secondary: #B7C4C2;
+      --text-muted: #7C8B89;
+      --accent: #7C9BD3;
+      --accent-strong: #A0BAE3;
+      --accent-ink: #0D1211;
+      --good: #3fc23f;
+      --warning: #e0a53a;
+      --critical: #e97878;
+      --client: #3987e5;
+      --comp1: #d95926;
+      --comp2: #199e70;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0D1211;
+    --surface: #171E1D;
+    --surface-2: #1E2725;
+    --border: #2C3634;
+    --text-primary: #F2F5F4;
+    --text-secondary: #B7C4C2;
+    --text-muted: #7C8B89;
+    --accent: #7C9BD3;
+    --accent-strong: #A0BAE3;
+    --accent-ink: #0D1211;
+    --good: #3fc23f;
+    --warning: #e0a53a;
+    --critical: #e97878;
+    --client: #3987e5;
+    --comp1: #d95926;
+    --comp2: #199e70;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #F5F6F5;
+    --surface: #FFFFFF;
+    --surface-2: #EDF0EF;
+    --border: #DCE2E1;
+    --text-primary: #101514;
+    --text-secondary: #4B5957;
+    --text-muted: #808F8D;
+    --accent: #2B4570;
+    --accent-strong: #1C2F4E;
+    --accent-ink: #FFFFFF;
+    --good: #0ca30c;
+    --warning: #b8790f;
+    --critical: #d03b3b;
+    --client: #2a78d6;
+    --comp1: #eb6834;
+    --comp2: #1baf7a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 600; text-wrap: balance; margin: 0; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+  header.app {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 18px 28px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky; top: 0; z-index: 20;
+  }
+  header.app .title-block { display: flex; flex-direction: column; gap: 2px; }
+  header.app h1 { font-size: 19px; letter-spacing: 0.01em; }
+  header.app .subtitle { font-size: 12.5px; color: var(--text-muted); }
+  .save-indicator { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  .save-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); transition: opacity 0.4s; }
+
+  nav.tabs {
+    display: flex; gap: 4px; padding: 10px 28px 0; background: var(--surface);
+    border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  nav.tabs button {
+    appearance: none; border: none; background: none; cursor: pointer;
+    padding: 10px 16px; font-size: 13.5px; font-weight: 500; color: var(--text-secondary);
+    border-bottom: 2px solid transparent; white-space: nowrap;
+    font-family: inherit;
+  }
+  nav.tabs button:hover { color: var(--text-primary); }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.tabs button:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  nav.tabs .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 28px 80px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; box-shadow: var(--shadow); margin-bottom: 18px;
+  }
+  .card h2 { font-size: 16px; margin-bottom: 4px; }
+  .card .hint { font-size: 12.5px; color: var(--text-muted); margin-bottom: 16px; }
+
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--text-secondary); font-weight: 500; }
+  label.field input, label.field textarea, label.field select {
+    font: inherit; font-size: 14px; color: var(--text-primary); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+  }
+  label.field textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; resize: vertical; min-height: 90px; line-height: 1.6; }
+  label.field .note { font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 13px;
+  }
+  .chip button { appearance: none; border: none; background: none; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 50%; }
+  .chip button:hover { color: var(--critical); background: var(--surface); }
+  .add-chip-form { display: flex; gap: 6px; }
+  .add-chip-form input { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; border: 1px dashed var(--border); background: transparent; color: var(--text-primary); width: 150px; }
+  .btn {
+    appearance: none; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
+    font: inherit; font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--text-muted); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn.ghost { background: transparent; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  label.checkbox { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-secondary); }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    box-shadow: var(--shadow); border-top: 3px solid var(--entity-color, var(--accent));
+  }
+  .stat-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px; }
+  .stat-card .value { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .stat-card .value .of { font-size: 13px; color: var(--text-muted); }
+  .stat-card .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+  .grid-scroll { overflow-x: auto; overflow-y: clip; }
+  table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  table.grid th {
+    text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-muted); font-weight: 600; padding: 8px 8px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  table.grid td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  table.grid tbody tr.group-start td { border-top: 1px solid var(--border); }
+  table.grid td.qnum { color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; width: 28px; }
+  table.grid td.qtext { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; max-width: 260px; }
+  table.grid td.qtext .fade { color: var(--text-muted); }
+  table.grid td.platform { color: var(--text-secondary); font-size: 12.5px; white-space: nowrap; }
+  table.grid td.score { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: center; font-weight: 600; width: 40px; }
+  table.grid td.shot input {
+    font: inherit; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    width: 130px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; color: var(--text-secondary);
+  }
+  .toggle-row { display: flex; gap: 4px; }
+  .toggle {
+    appearance: none; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer;
+    font: inherit; font-size: 11px; font-weight: 600; border-radius: 5px; padding: 5px 8px; min-width: 36px;
+    color: var(--text-muted); text-align: center;
+  }
+  .toggle[data-on="1"] { background: var(--good); border-color: var(--good); color: #fff; }
+  .toggle[data-on="-1"] { background: var(--critical); border-color: var(--critical); color: #fff; }
+  .toggle.tri { display: flex; padding: 0; overflow: hidden; min-width: 76px; }
+  .toggle.tri span { flex: 1; padding: 5px 4px; }
+  .toggle.tri span.sel-1 { background: var(--good); color: #fff; }
+  .toggle.tri span.sel-0 { background: var(--surface-2); color: var(--text-muted); }
+  .toggle.tri span.sel--1 { background: var(--critical); color: #fff; }
+
+  .legend-note { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
+
+  .bar-chart { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .bar-row { display: grid; grid-template-columns: 120px 1fr 56px; align-items: center; gap: 10px; }
+  .bar-row .name { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+  .bar-row .track { background: var(--surface-2); border-radius: 4px; height: 14px; overflow: hidden; }
+  .bar-row .fill { height: 100%; border-radius: 4px 0 0 4px; }
+  .bar-row .pct { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  table.compare { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  table.compare th, table.compare td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  table.compare th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  table.compare td.num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: center; }
+  table.compare td.qtext { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .inline-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+
+  .empty-note { font-size: 13px; color: var(--text-muted); padding: 20px 0; text-align: center; }
+  .divider { height: 1px; background: var(--border); margin: 18px 0; }
+  .flex-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  code.k { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="title-block">
+    <h1>AI Visibility Audit — Score Entry</h1>
+    <div class="subtitle" id="header-subtitle">Set up your audit to begin</div>
+  </div>
+  <div class="save-indicator"><span class="save-dot" id="save-dot"></span><span id="save-text">Saved locally</span></div>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<main>
+  <section class="panel" id="panel-setup">
+    <div class="card">
+      <h2>Setup</h2>
+      <div class="hint">Same fields as your spreadsheet's Setup tab. Everything below regenerates automatically as you type.</div>
+      <div class="field-grid">
+        <label class="field">Client Name <input id="s-clientName" type="text" placeholder="e.g. GEM Family Law" /></label>
+        <label class="field">Competitor 1 <input id="s-competitor1" type="text" placeholder="e.g. Griffiths Law" /></label>
+        <label class="field">Competitor 2 <input id="s-competitor2" type="text" placeholder="e.g. The Harris Law Firm" /></label>
+        <label class="field">Service / Niche <input id="s-service" type="text" placeholder="e.g. family law" /></label>
+        <label class="field">City / Region <input id="s-city" type="text" placeholder="e.g. Denver, CO" /></label>
+        <label class="field">Audit Date <input id="s-auditDate" type="date" /></label>
+        <label class="field">Prepared By <input id="s-preparedBy" type="text" placeholder="e.g. Thea &amp; Jerome" /></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Platforms</h2>
+      <div class="hint">One score-entry row is generated per query per platform.</div>
+      <div class="chip-row" id="platform-chips"></div>
+      <form class="add-chip-form" id="add-platform-form" style="margin-top:10px;">
+        <input type="text" id="add-platform-input" placeholder="Add platform…" />
+        <button class="btn small" type="submit">Add</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Generic queries</h2>
+      <div class="hint">Same wording for every tab (unbranded local-search queries). One per line — edit freely.</div>
+      <label class="field">
+        <textarea id="s-genericQueries" rows="6"></textarea>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Branded query templates</h2>
+      <div class="hint">Use <code class="k">{business}</code> — it's swapped for each tab's own name (Client tab uses the client name, Competitor 1's tab uses that competitor's name, etc).</div>
+      <label class="field">
+        <textarea id="s-brandedTemplates" rows="4"></textarea>
+      </label>
+      <label class="checkbox" style="margin-top:12px;">
+        <input type="checkbox" id="s-comparisonEnabled" />
+        Also add head-to-head queries (<span class="mono">{business} vs {other}</span>) against each other entity
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="flex-between">
+        <div>
+          <h2>Backup</h2>
+          <div class="hint" style="margin-bottom:0;">Export everything as JSON so you never lose scored data.</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btn-export-json">Export backup (JSON)</button>
+          <button class="btn" id="btn-import-json">Import backup</button>
+          <input type="file" id="import-file-input" accept="application/json" style="display:none;" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-client" data-entity="client"></section>
+  <section class="panel" id="panel-comp1" data-entity="comp1"></section>
+  <section class="panel" id="panel-comp2" data-entity="comp2"></section>
+
+  <section class="panel" id="panel-dashboard">
+    <div id="dashboard-content"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "aiVisibilityTracker_v1";
+
+  var DEFAULT_STATE = {
+    setup: {
+      clientName: "", competitor1: "", competitor2: "",
+      service: "", city: "", auditDate: "", preparedBy: ""
+    },
+    platforms: ["ChatGPT", "Gemini", "Perplexity", "Google AI Overview"],
+    genericQueries: [
+      "best {service} in {city}",
+      "top {service} providers in {city}",
+      "{service} near {city} recommendations",
+      "who is the best {service} attorney in {city}",
+      "affordable {service} in {city}"
+    ],
+    brandedTemplates: [
+      "{business} reviews",
+      "is {business} legit",
+      "is {business} good"
+    ],
+    comparisonEnabled: true,
+    entries: { client: {}, comp1: {}, comp2: {} }
+  };
+
+  var ENTITY_META = {
+    client:  { fallback: "Client",        colorVar: "--client" },
+    comp1:   { fallback: "Competitor 1",  colorVar: "--comp1" },
+    comp2:   { fallback: "Competitor 2",  colorVar: "--comp2" }
+  };
+  var ENTITY_ORDER = ["client", "comp1", "comp2"];
+
+  var state = loadState();
+  var activeTab = "setup";
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
+      var parsed = JSON.parse(raw);
+      var merged = JSON.parse(JSON.stringify(DEFAULT_STATE));
+      merged.setup = Object.assign({}, merged.setup, parsed.setup || {});
+      merged.platforms = parsed.platforms || merged.platforms;
+      merged.genericQueries = parsed.genericQueries || merged.genericQueries;
+      merged.brandedTemplates = parsed.brandedTemplates || merged.brandedTemplates;
+      merged.comparisonEnabled = parsed.comparisonEnabled !== undefined ? parsed.comparisonEnabled : merged.comparisonEnabled;
+      merged.entries = parsed.entries || merged.entries;
+      return merged;
+    } catch (e) {
+      return JSON.parse(JSON.stringify(DEFAULT_STATE));
+    }
+  }
+
+  var saveTimer = null;
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    var dot = document.getElementById("save-dot");
+    var text = document.getElementById("save-text");
+    text.textContent = "Saved";
+    dot.style.opacity = "1";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { dot.style.opacity = "0.35"; }, 900);
+  }
+
+  function entityName(key) {
+    var raw = key === "client" ? state.setup.clientName
+      : key === "comp1" ? state.setup.competitor1
+      : state.setup.competitor2;
+    return (raw && raw.trim()) ? raw.trim() : ENTITY_META[key].fallback;
+  }
+
+  function fillTemplate(tpl, businessName, otherName) {
+    return tpl
+      .replace(/\{business\}/g, businessName)
+      .replace(/\{service\}/g, state.setup.service || "{service}")
+      .replace(/\{city\}/g, state.setup.city || "{city}")
+      .replace(/\{other\}/g, otherName || "{other}");
+  }
+
+  function buildQueries(entityKey) {
+    var name = entityName(entityKey);
+    var list = [];
+    state.genericQueries.forEach(function (q) {
+      if (q.trim()) list.push(fillTemplate(q, name));
+    });
+    state.brandedTemplates.forEach(function (q) {
+      if (q.trim()) list.push(fillTemplate(q, name));
+    });
+    if (state.comparisonEnabled) {
+      ENTITY_ORDER.filter(function (k) { return k !== entityKey; }).forEach(function (otherKey) {
+        list.push(fillTemplate("{business} vs {other}", name, entityName(otherKey)));
+      });
+    }
+    return list;
+  }
+
+  function buildRows(entityKey) {
+    var queries = buildQueries(entityKey);
+    var rows = [];
+    queries.forEach(function (q, qi) {
+      state.platforms.forEach(function (platform, pi) {
+        rows.push({ qi: qi, qnum: qi + 1, query: q, platform: platform, isFirstOfGroup: pi === 0 });
+      });
+    });
+    return rows;
+  }
+
+  function getEntry(entityKey, qi, platform) {
+    var e = state.entries[entityKey];
+    if (!e[qi]) e[qi] = {};
+    if (!e[qi][platform]) e[qi][platform] = { mentioned: 0, recommended: 0, accurate: 0, cited: 0, screenshot: "" };
+    return e[qi][platform];
+  }
+
+  function rowScore(entry) {
+    return entry.mentioned * 1 + entry.recommended * 2 + entry.accurate * 1 + entry.cited * 1;
+  }
+
+  function slug(s) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
+  function suggestScreenshotName(entityKey, row) {
+    return slug(row.platform) + "_" + entityKey + "_q" + String(row.qnum).padStart(2, "0") + ".png";
+  }
+
+  // ---------- rendering ----------
+
+  function cssVarColor(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function renderTabs() {
+    var tabs = [
+      { id: "setup", label: "Setup" },
+      { id: "client", label: entityName("client"), color: "--client" },
+      { id: "comp1", label: entityName("comp1"), color: "--comp1" },
+      { id: "comp2", label: entityName("comp2"), color: "--comp2" },
+      { id: "dashboard", label: "Dashboard" }
+    ];
+    var nav = document.getElementById("tabs");
+    nav.innerHTML = "";
+    tabs.forEach(function (t) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = t.id === activeTab ? "active" : "";
+      if (t.color) {
+        var sw = document.createElement("span");
+        sw.className = "swatch";
+        sw.style.background = "var(" + t.color + ")";
+        btn.appendChild(sw);
+      }
+      btn.appendChild(document.createTextNode(t.label));
+      btn.addEventListener("click", function () { activeTab = t.id; render(); });
+      nav.appendChild(btn);
+    });
+
+    document.getElementById("header-subtitle").textContent =
+      (state.setup.clientName ? state.setup.clientName : "Untitled audit") +
+      (state.setup.service ? " · " + state.setup.service : "") +
+      (state.setup.city ? " · " + state.setup.city : "") +
+      (state.setup.auditDate ? " · " + state.setup.auditDate : "");
+  }
+
+  function renderSetupValues() {
+    document.getElementById("s-clientName").value = state.setup.clientName;
+    document.getElementById("s-competitor1").value = state.setup.competitor1;
+    document.getElementById("s-competitor2").value = state.setup.competitor2;
+    document.getElementById("s-service").value = state.setup.service;
+    document.getElementById("s-city").value = state.setup.city;
+    document.getElementById("s-auditDate").value = state.setup.auditDate;
+    document.getElementById("s-preparedBy").value = state.setup.preparedBy;
+    document.getElementById("s-genericQueries").value = state.genericQueries.join("\n");
+    document.getElementById("s-brandedTemplates").value = state.brandedTemplates.join("\n");
+    document.getElementById("s-comparisonEnabled").checked = !!state.comparisonEnabled;
+    renderPlatformChips();
+  }
+
+  function renderPlatformChips() {
+    var wrap = document.getElementById("platform-chips");
+    wrap.innerHTML = "";
+    state.platforms.forEach(function (p, idx) {
+      var chip = document.createElement("span");
+      chip.className = "chip";
+      chip.appendChild(document.createTextNode(p));
+      var rm = document.createElement("button");
+      rm.type = "button";
+      rm.textContent = "×";
+      rm.title = "Remove " + p;
+      rm.addEventListener("click", function () {
+        state.platforms.splice(idx, 1);
+        saveState(); render();
+      });
+      chip.appendChild(rm);
+      wrap.appendChild(chip);
+    });
+  }
+
+  function bindSetupEvents() {
+    var textFields = ["clientName", "competitor1", "competitor2", "service", "city", "auditDate", "preparedBy"];
+    textFields.forEach(function (f) {
+      document.getElementById("s-" + f).addEventListener("input", function (e) {
+        state.setup[f] = e.target.value;
+        saveState();
+        renderTabs();
+        if (activeTab !== "setup") render();
+      });
+    });
+    document.getElementById("s-genericQueries").addEventListener("input", function (e) {
+      state.genericQueries = e.target.value.split("\n");
+      saveState();
+    });
+    document.getElementById("s-brandedTemplates").addEventListener("input", function (e) {
+      state.brandedTemplates = e.target.value.split("\n");
+      saveState();
+    });
+    document.getElementById("s-comparisonEnabled").addEventListener("change", function (e) {
+      state.comparisonEnabled = e.target.checked;
+      saveState();
+    });
+    document.getElementById("add-platform-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var input = document.getElementById("add-platform-input");
+      var val = input.value.trim();
+      if (val && state.platforms.indexOf(val) === -1) {
+        state.platforms.push(val);
+        input.value = "";
+        saveState(); render();
+      }
+    });
+    document.getElementById("btn-export-json").addEventListener("click", exportJSON);
+    document.getElementById("btn-import-json").addEventListener("click", function () {
+      document.getElementById("import-file-input").click();
+    });
+    document.getElementById("import-file-input").addEventListener("change", importJSON);
+  }
+
+  function renderEntityPanel(entityKey) {
+    var panel = document.getElementById("panel-" + entityKey);
+    var rows = buildRows(entityKey);
+    var name = entityName(entityKey);
+    var colorVar = ENTITY_META[entityKey].colorVar;
+
+    var totalScore = 0, maxScore = rows.length * 5;
+    var mentionedCount = 0, recommendedCount = 0, citedCount = 0, wrongCount = 0, scoredRows = 0;
+    rows.forEach(function (r) {
+      var entry = getEntry(entityKey, r.qi, r.platform);
+      var sc = rowScore(entry);
+      totalScore += sc;
+      if (entry.mentioned) mentionedCount++;
+      if (entry.recommended) recommendedCount++;
+      if (entry.cited) citedCount++;
+      if (entry.accurate === -1) wrongCount++;
+      if (entry.mentioned || entry.recommended || entry.cited || entry.accurate) scoredRows++;
+    });
+    var pct = maxScore ? Math.round((totalScore / maxScore) * 100) : 0;
+
+    var html = "";
+    html += '<div class="stat-row">';
+    html += statCard("Visibility score", totalScore + '<span class="of"> / ' + maxScore + '</span>', pct + "% of max", colorVar);
+    html += statCard("Mentioned", mentionedCount + '<span class="of"> / ' + rows.length + '</span>', "", colorVar);
+    html += statCard("Recommended", recommendedCount + '<span class="of"> / ' + rows.length + '</span>', "", colorVar);
+    html += statCard("Cited", citedCount + '<span class="of"> / ' + rows.length + '</span>', "", colorVar);
+    html += statCard("Accuracy issues", String(wrongCount), wrongCount ? "AI stated something wrong" : "none flagged", colorVar);
+    html += "</div>";
+
+    html += '<div class="card">';
+    html += '<div class="flex-between"><div><h2>' + escapeHtml(name) + ' — score entry</h2>';
+    html += '<div class="hint" style="margin-bottom:0;">' + rows.length + ' rows · ' + scoredRows + ' touched. Click a toggle to cycle its value.</div></div>';
+    html += '<div class="btn-row"><button class="btn small" data-copy-entity="' + entityKey + '">Copy as TSV</button>';
+    html += '<button class="btn small" data-csv-entity="' + entityKey + '">Download CSV</button></div></div>';
+
+    if (rows.length === 0) {
+      html += '<div class="empty-note">Fill in Setup to generate queries.</div>';
+    } else {
+      html += '<div class="grid-scroll"><table class="grid"><thead><tr>' +
+        '<th>#</th><th>Query</th><th>Platform</th><th>Mentioned?</th><th>Recommended?</th><th>Accurate?</th><th>Cited?</th><th>Score</th><th>Screenshot file</th>' +
+        '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        var entry = getEntry(entityKey, r.qi, r.platform);
+        var sc = rowScore(entry);
+        html += '<tr' + (r.isFirstOfGroup ? ' class="group-start"' : '') + '>';
+        html += '<td class="qnum">' + r.qnum + '</td>';
+        html += '<td class="qtext">' + (r.isFirstOfGroup ? escapeHtml(r.query) : '<span class="fade">' + escapeHtml(r.query) + '</span>') + '</td>';
+        html += '<td class="platform">' + escapeHtml(r.platform) + '</td>';
+        html += '<td><button type="button" class="toggle" data-field="mentioned" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.mentioned + '">' + (entry.mentioned ? "Yes" : "No") + '</button></td>';
+        html += '<td><button type="button" class="toggle" data-field="recommended" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.recommended + '" title="Worth 2 points">' + (entry.recommended ? "Yes ×2" : "No") + '</button></td>';
+        html += '<td>' + triToggle(entityKey, r.qi, r.platform, entry.accurate) + '</td>';
+        html += '<td><button type="button" class="toggle" data-field="cited" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.cited + '">' + (entry.cited ? "Yes" : "No") + '</button></td>';
+        html += '<td class="score" style="color:' + (sc < 0 ? "var(--critical)" : sc >= 4 ? "var(--good)" : "inherit") + '">' + sc + '</td>';
+        html += '<td class="shot"><input type="text" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-field="screenshot" placeholder="' + escapeAttr(suggestScreenshotName(entityKey, r)) + '" value="' + escapeAttr(entry.screenshot || "") + '" /></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div class="legend-note">Mentioned/Cited: 1 or 0. Recommended: 1 or 0 (counts double). Accurate: Wrong −1 · N/A 0 · Correct 1. Max per row = 5.</div>';
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+  }
+
+  function statCard(label, value, sub, colorVar) {
+    return '<div class="stat-card" style="--entity-color: var(' + colorVar + ')">' +
+      '<div class="label">' + label + '</div>' +
+      '<div class="value">' + value + '</div>' +
+      (sub ? '<div class="sub">' + sub + '</div>' : "") +
+      '</div>';
+  }
+
+  function triToggle(entityKey, qi, platform, val) {
+    function cls(v) { return v === val ? "sel-" + v : ""; }
+    return '<div class="toggle tri" data-field="accurate" data-entity="' + entityKey + '" data-qi="' + qi + '" data-platform="' + escapeAttr(platform) + '">' +
+      '<span data-val="-1" class="' + cls(-1) + '">Wrong</span>' +
+      '<span data-val="0" class="' + cls(0) + '">N/A</span>' +
+      '<span data-val="1" class="' + cls(1) + '">OK</span>' +
+      '</div>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+
+  function bindEntityPanelEvents(entityKey) {
+    var panel = document.getElementById("panel-" + entityKey);
+    panel.addEventListener("click", function (e) {
+      var btn = e.target.closest(".toggle");
+      if (!btn) {
+        var copyBtn = e.target.closest("[data-copy-entity]");
+        if (copyBtn) { copyEntityTSV(copyBtn.getAttribute("data-copy-entity")); }
+        var csvBtn = e.target.closest("[data-csv-entity]");
+        if (csvBtn) { downloadEntityCSV(csvBtn.getAttribute("data-csv-entity")); }
+        return;
+      }
+      var field = btn.getAttribute("data-field");
+      var qi = btn.getAttribute("data-qi");
+      var platform = btn.getAttribute("data-platform");
+      var entry = getEntry(entityKey, qi, platform);
+      if (field === "accurate") {
+        var span = e.target.closest("span[data-val]");
+        if (span) {
+          entry.accurate = parseInt(span.getAttribute("data-val"), 10);
+        } else {
+          entry.accurate = entry.accurate === 1 ? 0 : entry.accurate === 0 ? -1 : 1;
+        }
+      } else {
+        entry[field] = entry[field] ? 0 : 1;
+      }
+      saveState();
+      renderEntityPanel(entityKey);
+    });
+    panel.addEventListener("input", function (e) {
+      if (e.target.matches('input[data-field="screenshot"]')) {
+        var entry = getEntry(entityKey, e.target.getAttribute("data-qi"), e.target.getAttribute("data-platform"));
+        entry.screenshot = e.target.value;
+        saveState();
+      }
+    });
+  }
+
+  // ---------- dashboard ----------
+
+  function entityStats(entityKey) {
+    var rows = buildRows(entityKey);
+    var total = 0, mentioned = 0, recommended = 0, cited = 0, wrong = 0;
+    rows.forEach(function (r) {
+      var entry = getEntry(entityKey, r.qi, r.platform);
+      total += rowScore(entry);
+      if (entry.mentioned) mentioned++;
+      if (entry.recommended) recommended++;
+      if (entry.cited) cited++;
+      if (entry.accurate === -1) wrong++;
+    });
+    var max = rows.length * 5;
+    return { rows: rows, total: total, max: max, pct: max ? total / max : 0, mentioned: mentioned, recommended: recommended, cited: cited, wrong: wrong, count: rows.length };
+  }
+
+  function renderDashboard() {
+    var stats = {};
+    ENTITY_ORDER.forEach(function (k) { stats[k] = entityStats(k); });
+    var maxPct = Math.max.apply(null, ENTITY_ORDER.map(function (k) { return stats[k].pct; }).concat([0.0001]));
+
+    var html = "";
+    html += '<div class="stat-row">';
+    ENTITY_ORDER.forEach(function (k) {
+      var s = stats[k];
+      html += statCard(entityName(k) + " — visibility", Math.round(s.pct * 100) + '<span class="of">%</span>', s.total + " / " + s.max + " pts", ENTITY_META[k].colorVar);
+    });
+    html += '</div>';
+
+    html += '<div class="card"><h2>Visibility score comparison</h2><div class="hint">Total score as a percentage of max possible, across every query &amp; platform.</div>';
+    html += '<div class="bar-chart">';
+    ENTITY_ORDER.forEach(function (k) {
+      var s = stats[k];
+      var pctOfMax = maxPct ? (s.pct / maxPct) * 100 : 0;
+      html += '<div class="bar-row">';
+      html += '<div class="name"><span class="dot" style="background:var(' + ENTITY_META[k].colorVar + ')"></span>' + escapeHtml(entityName(k)) + '</div>';
+      html += '<div class="track"><div class="fill" style="width:' + pctOfMax.toFixed(1) + '%; background:var(' + ENTITY_META[k].colorVar + ')"></div></div>';
+      html += '<div class="pct">' + Math.round(s.pct * 100) + '%</div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    // platform breakdown
+    html += '<div class="card"><h2>By platform</h2><div class="hint">Average row score (max 5) per platform.</div>';
+    html += '<div style="overflow-x:auto; overflow-y:visible;"><table class="compare"><thead><tr><th>Platform</th>';
+    ENTITY_ORDER.forEach(function (k) { html += '<th>' + escapeHtml(entityName(k)) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    state.platforms.forEach(function (platform) {
+      html += '<tr><td>' + escapeHtml(platform) + '</td>';
+      ENTITY_ORDER.forEach(function (k) {
+        var rows = stats[k].rows.filter(function (r) { return r.platform === platform; });
+        var sum = 0;
+        rows.forEach(function (r) { sum += rowScore(getEntry(k, r.qi, r.platform)); });
+        var avg = rows.length ? sum / rows.length : 0;
+        var w = Math.max(0, (avg / 5) * 40);
+        html += '<td class="num"><span class="inline-bar" style="width:' + w.toFixed(0) + 'px; background:var(' + ENTITY_META[k].colorVar + ')"></span>' + avg.toFixed(1) + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+
+    // generic query head-to-head
+    var generic = state.genericQueries.filter(function (q) { return q.trim(); });
+    if (generic.length) {
+      html += '<div class="card"><h2>Head-to-head on shared queries</h2><div class="hint">These generic queries run identically for every tab — direct comparison, summed across platforms.</div>';
+      html += '<div style="overflow-x:auto; overflow-y:visible;"><table class="compare"><thead><tr><th>Query</th>';
+      ENTITY_ORDER.forEach(function (k) { html += '<th>' + escapeHtml(entityName(k)) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      generic.forEach(function (qTpl, qi) {
+        var qText = fillTemplate(qTpl, entityName("client"));
+        html += '<tr><td class="qtext">' + escapeHtml(qText) + '</td>';
+        ENTITY_ORDER.forEach(function (k) {
+          var sum = 0, max = 0;
+          state.platforms.forEach(function (platform) {
+            sum += rowScore(getEntry(k, qi, platform));
+            max += 5;
+          });
+          html += '<td class="num">' + sum + ' <span style="color:var(--text-muted)">/ ' + max + '</span></td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+    }
+
+    document.getElementById("dashboard-content").innerHTML = html;
+  }
+
+  // ---------- export ----------
+
+  function entityTSVRows(entityKey, delimiter) {
+    var rows = buildRows(entityKey);
+    var header = ["#", "Query", "Platform", "Mentioned?", "Recommended?", "Accurate?", "Cited?", "Score (max 5)", "Screenshot file"];
+    var lines = [header.join(delimiter)];
+    rows.forEach(function (r) {
+      var entry = getEntry(entityKey, r.qi, r.platform);
+      var sc = rowScore(entry);
+      var cells = [r.qnum, r.query, r.platform, entry.mentioned, entry.recommended, entry.accurate, entry.cited, sc, entry.screenshot || ""];
+      if (delimiter === ",") {
+        cells = cells.map(function (c) {
+          var s = String(c);
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        });
+      }
+      lines.push(cells.join(delimiter));
+    });
+    return lines.join("\n");
+  }
+
+  function copyEntityTSV(entityKey) {
+    var tsv = entityTSVRows(entityKey, "\t");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(tsv).then(function () {
+        flashSaveText("Copied " + entityName(entityKey) + " tab — paste into your sheet");
+      }, function () {
+        fallbackCopy(tsv);
+      });
+    } else {
+      fallbackCopy(tsv);
+    }
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); flashSaveText("Copied to clipboard"); } catch (e) { flashSaveText("Copy failed — select & copy manually"); }
+    document.body.removeChild(ta);
+  }
+
+  function flashSaveText(msg) {
+    var text = document.getElementById("save-text");
+    var prev = text.textContent;
+    text.textContent = msg;
+    setTimeout(function () { text.textContent = "Saved"; }, 2200);
+  }
+
+  function downloadEntityCSV(entityKey) {
+    var csv = entityTSVRows(entityKey, ",");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = slug(entityName(entityKey)) + "_scoring.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  function exportJSON() {
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ai-visibility-audit-backup.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  function importJSON(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(reader.result);
+        state = parsed;
+        saveState();
+        render();
+        flashSaveText("Backup imported");
+      } catch (err) {
+        alert("Could not read that file as a valid backup.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  // ---------- main render ----------
+
+  var panelsBound = { setup: false, client: false, comp1: false, comp2: false };
+
+  function render() {
+    renderTabs();
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+
+    if (activeTab === "setup") {
+      document.getElementById("panel-setup").classList.add("active");
+      renderSetupValues();
+      if (!panelsBound.setup) { bindSetupEvents(); panelsBound.setup = true; }
+    } else if (activeTab === "dashboard") {
+      document.getElementById("panel-dashboard").classList.add("active");
+      renderDashboard();
+    } else {
+      document.getElementById("panel-" + activeTab).classList.add("active");
+      renderEntityPanel(activeTab);
+      if (!panelsBound[activeTab]) { bindEntityPanelEvents(activeTab); panelsBound[activeTab] = true; }
+    }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

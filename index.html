@@ -193,9 +193,24 @@
   table.grid td.qtext .fade { color: var(--text-muted); }
   table.grid td.platform { color: var(--text-secondary); font-size: 12.5px; white-space: nowrap; }
   table.grid td.score { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; text-align: center; font-weight: 600; width: 40px; }
-  table.grid td.shot input {
+  .shot-cell { display: flex; align-items: center; gap: 4px; }
+  .shot-btn {
+    font: inherit; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px;
+    color: var(--text-muted); cursor: pointer;
+  }
+  .shot-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .shot-cell.has-name .shot-btn { color: var(--text-secondary); border-color: var(--good); }
+  .shot-cell.has-name .shot-btn::before { content: "✓ "; color: var(--good); }
+  .shot-edit {
+    appearance: none; border: 1px solid var(--border); background: transparent; cursor: pointer;
+    color: var(--text-muted); font-size: 11px; border-radius: 5px; padding: 5px 6px; line-height: 1; flex: none;
+  }
+  .shot-edit:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .shot-input {
     font: inherit; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    width: 130px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; color: var(--text-secondary);
+    width: 140px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 5px; padding: 5px 7px; color: var(--text-primary);
   }
   .toggle-row { display: flex; gap: 4px; }
   .toggle {
@@ -371,6 +386,7 @@
 
   var state = loadState();
   var activeTab = "setup";
+  var editingShotKey = null;
 
   function loadState() {
     try {
@@ -461,6 +477,24 @@
 
   function suggestScreenshotName(entityKey, row) {
     return slug(row.platform) + "_" + entityKey + "_q" + String(row.qnum).padStart(2, "0") + ".png";
+  }
+
+  function shotKey(entityKey, qi, platform) {
+    return entityKey + "|" + qi + "|" + platform;
+  }
+
+  function renderShotCell(entityKey, row, entry) {
+    var key = shotKey(entityKey, row.qi, row.platform);
+    var suggested = suggestScreenshotName(entityKey, row);
+    var current = entry.screenshot || "";
+    if (editingShotKey === key) {
+      return '<input type="text" class="shot-input" data-shot-input data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" value="' + escapeAttr(current || suggested) + '" />';
+    }
+    var label = current || suggested;
+    return '<div class="shot-cell' + (current ? ' has-name' : '') + '">' +
+      '<button type="button" class="shot-btn" data-copy-shot data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" data-name="' + escapeAttr(label) + '" title="Click to copy filename">' + escapeHtml(label) + '</button>' +
+      '<button type="button" class="shot-edit" data-edit-shot data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" title="Edit filename">&#9998;</button>' +
+      '</div>';
   }
 
   // ---------- rendering ----------
@@ -627,11 +661,11 @@
         html += '<td>' + triToggle(entityKey, r.qi, r.platform, entry.accurate) + '</td>';
         html += '<td><button type="button" class="toggle" data-field="cited" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.cited + '">' + (entry.cited ? "Yes" : "No") + '</button></td>';
         html += '<td class="score" style="color:' + (sc < 0 ? "var(--critical)" : sc >= 4 ? "var(--good)" : "inherit") + '">' + sc + '</td>';
-        html += '<td class="shot"><input type="text" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-field="screenshot" placeholder="' + escapeAttr(suggestScreenshotName(entityKey, r)) + '" value="' + escapeAttr(entry.screenshot || "") + '" /></td>';
+        html += '<td class="shot">' + renderShotCell(entityKey, r, entry) + '</td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
-      html += '<div class="legend-note">Mentioned/Cited: 1 or 0. Recommended: 1 or 0 (counts double). Accurate: Wrong −1 · N/A 0 · Correct 1. Max per row = 5.</div>';
+      html += '<div class="legend-note">Mentioned/Cited: 1 or 0. Recommended: 1 or 0 (counts double). Accurate: Wrong −1 · N/A 0 · Correct 1. Max per row = 5. Click a Screenshot file name to copy it (✎ to rename before saving your screenshot).</div>';
     }
     html += '</div>';
     panel.innerHTML = html;
@@ -661,9 +695,37 @@
   }
   function escapeAttr(s) { return escapeHtml(s); }
 
+  function commitShotEdit(entityKey, input) {
+    var entry = getEntry(entityKey, input.getAttribute("data-qi"), input.getAttribute("data-platform"));
+    entry.screenshot = input.value.trim();
+    editingShotKey = null;
+    saveState();
+    renderEntityPanel(entityKey);
+  }
+
   function bindEntityPanelEvents(entityKey) {
     var panel = document.getElementById("panel-" + entityKey);
     panel.addEventListener("click", function (e) {
+      var shotBtn = e.target.closest("[data-copy-shot]");
+      if (shotBtn) {
+        var qi = shotBtn.getAttribute("data-qi");
+        var platform = shotBtn.getAttribute("data-platform");
+        var name = shotBtn.getAttribute("data-name");
+        var entry = getEntry(entityKey, qi, platform);
+        entry.screenshot = name;
+        saveState();
+        copyText(name, 'Copied "' + name + '"');
+        renderEntityPanel(entityKey);
+        return;
+      }
+      var editBtn = e.target.closest("[data-edit-shot]");
+      if (editBtn) {
+        editingShotKey = shotKey(entityKey, editBtn.getAttribute("data-qi"), editBtn.getAttribute("data-platform"));
+        renderEntityPanel(entityKey);
+        var input = panel.querySelector('[data-shot-input]');
+        if (input) { input.focus(); input.select(); }
+        return;
+      }
       var btn = e.target.closest(".toggle");
       if (!btn) {
         var copyBtn = e.target.closest("[data-copy-entity]");
@@ -673,27 +735,30 @@
         return;
       }
       var field = btn.getAttribute("data-field");
-      var qi = btn.getAttribute("data-qi");
-      var platform = btn.getAttribute("data-platform");
-      var entry = getEntry(entityKey, qi, platform);
+      var toggleQi = btn.getAttribute("data-qi");
+      var togglePlatform = btn.getAttribute("data-platform");
+      var toggleEntry = getEntry(entityKey, toggleQi, togglePlatform);
       if (field === "accurate") {
         var span = e.target.closest("span[data-val]");
         if (span) {
-          entry.accurate = parseInt(span.getAttribute("data-val"), 10);
+          toggleEntry.accurate = parseInt(span.getAttribute("data-val"), 10);
         } else {
-          entry.accurate = entry.accurate === 1 ? 0 : entry.accurate === 0 ? -1 : 1;
+          toggleEntry.accurate = toggleEntry.accurate === 1 ? 0 : toggleEntry.accurate === 0 ? -1 : 1;
         }
       } else {
-        entry[field] = entry[field] ? 0 : 1;
+        toggleEntry[field] = toggleEntry[field] ? 0 : 1;
       }
       saveState();
       renderEntityPanel(entityKey);
     });
-    panel.addEventListener("input", function (e) {
-      if (e.target.matches('input[data-field="screenshot"]')) {
-        var entry = getEntry(entityKey, e.target.getAttribute("data-qi"), e.target.getAttribute("data-platform"));
-        entry.screenshot = e.target.value;
-        saveState();
+    panel.addEventListener("keydown", function (e) {
+      if (!e.target.matches("[data-shot-input]")) return;
+      if (e.key === "Enter") { e.target.blur(); }
+      if (e.key === "Escape") { editingShotKey = null; renderEntityPanel(entityKey); }
+    });
+    panel.addEventListener("focusout", function (e) {
+      if (e.target.matches("[data-shot-input]") && editingShotKey !== null) {
+        commitShotEdit(entityKey, e.target);
       }
     });
   }
@@ -808,26 +873,29 @@
   }
 
   function copyEntityTSV(entityKey) {
-    var tsv = entityTSVRows(entityKey, "\t");
+    copyText(entityTSVRows(entityKey, "\t"), "Copied " + entityName(entityKey) + " tab — paste into your sheet");
+  }
+
+  function copyText(text, successMsg) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(tsv).then(function () {
-        flashSaveText("Copied " + entityName(entityKey) + " tab — paste into your sheet");
+      navigator.clipboard.writeText(text).then(function () {
+        flashSaveText(successMsg);
       }, function () {
-        fallbackCopy(tsv);
+        fallbackCopy(text, successMsg);
       });
     } else {
-      fallbackCopy(tsv);
+      fallbackCopy(text, successMsg);
     }
   }
 
-  function fallbackCopy(text) {
+  function fallbackCopy(text, successMsg) {
     var ta = document.createElement("textarea");
     ta.value = text;
     ta.style.position = "fixed";
     ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand("copy"); flashSaveText("Copied to clipboard"); } catch (e) { flashSaveText("Copy failed — select & copy manually"); }
+    try { document.execCommand("copy"); flashSaveText(successMsg || "Copied to clipboard"); } catch (e) { flashSaveText("Copy failed — select & copy manually"); }
     document.body.removeChild(ta);
   }
 

@@ -25,7 +25,7 @@
 SetWorkingDir, %A_ScriptDir%
 
 ; ---- Settings you can change ----
-SaveFolder := "C:\Users\theam\OneDrive\Documents\Claude Code\ai visibility screenshots"
+SaveFolder := "C:\Users\jerom\OneDrive\Documents\AI visibility Tracker\screenshots"
 ImageFormat := "png"        ; "png" or "jpg" (used when you don't type your own extension)
 PromptForFileName := true   ; true = ask for a name each time, false = fully automatic
 ; ----------------------------------

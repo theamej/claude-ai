@@ -951,7 +951,8 @@
     html += '<div class="flex-between"><div><h2>' + escapeHtml(name) + ' — score entry</h2>';
     html += '<div class="hint" style="margin-bottom:0;">' + rows.length + ' rows · ' + scoredRows + ' touched. Click a toggle to cycle its value.</div></div>';
     html += '<div class="btn-row"><button class="btn small" data-copy-entity="' + entityKey + '">Copy as TSV</button>';
-    html += '<button class="btn small" data-csv-entity="' + entityKey + '">Download CSV</button></div></div>';
+    html += '<button class="btn small" data-csv-entity="' + entityKey + '">Download CSV</button>';
+    html += '<button class="btn small ghost" data-resync-shots="' + entityKey + '" title="Renumber auto-named screenshot files to match the current row order — names you typed yourself are left alone">Resync screenshot #s</button></div></div>';
 
     if (rows.length === 0) {
       html += '<div class="empty-note">Fill in Setup to generate queries.</div>';
@@ -1015,6 +1016,7 @@
   function commitShotEdit(entityKey, input) {
     var entry = getEntry(entityKey, input.getAttribute("data-query"), input.getAttribute("data-platform"));
     entry.screenshot = input.value.trim();
+    entry.screenshotAuto = false;
     editingShotKey = null;
     saveState();
     renderEntityPanel(entityKey);
@@ -1030,6 +1032,7 @@
         var name = shotBtn.getAttribute("data-name");
         var entry = getEntry(entityKey, shotQuery, platform);
         entry.screenshot = name;
+        entry.screenshotAuto = true;
         saveState();
         copyText(name, 'Copied "' + name + '"');
         renderEntityPanel(entityKey);
@@ -1079,6 +1082,8 @@
         if (copyBtn) { copyEntityTSV(copyBtn.getAttribute("data-copy-entity")); }
         var csvBtn = e.target.closest("[data-csv-entity]");
         if (csvBtn) { downloadEntityCSV(csvBtn.getAttribute("data-csv-entity")); }
+        var resyncBtn = e.target.closest("[data-resync-shots]");
+        if (resyncBtn) { resyncScreenshotNumbers(resyncBtn.getAttribute("data-resync-shots")); }
         return;
       }
       var field = btn.getAttribute("data-field");
@@ -1226,6 +1231,28 @@
 
   function copyEntityTSV(entityKey) {
     copyText(entityTSVRows(entityKey, "\t"), "Copied " + entityName(entityKey) + " tab — paste into your sheet");
+  }
+
+  // Re-generates the suggested filename for every row whose screenshot name was
+  // last set by clicking the suggestion (not typed in manually), so numbering
+  // catches up after the query list gets reordered or edited. Manually-typed
+  // names are never touched.
+  function resyncScreenshotNumbers(entityKey) {
+    var rows = buildRows(entityKey);
+    var changed = 0;
+    rows.forEach(function (r) {
+      var entry = getEntry(entityKey, r.query, r.platform);
+      if (entry.screenshot && entry.screenshotAuto) {
+        var fresh = suggestScreenshotName(entityKey, r);
+        if (fresh !== entry.screenshot) {
+          entry.screenshot = fresh;
+          changed++;
+        }
+      }
+    });
+    saveState();
+    renderEntityPanel(entityKey);
+    flashSaveText(changed ? "Renumbered " + changed + " screenshot name" + (changed === 1 ? "" : "s") : "Nothing to renumber");
   }
 
   function copyText(text, successMsg) {

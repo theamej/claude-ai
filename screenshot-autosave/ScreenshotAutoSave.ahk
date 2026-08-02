@@ -41,7 +41,12 @@ HelperScript =
 param([string]$Path)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
+$found = $false
+for ($i = 0; $i -lt 20; $i++) {
+    if ([System.Windows.Forms.Clipboard]::ContainsImage()) { $found = $true; break }
+    Start-Sleep -Milliseconds 100
+}
+if ($found) {
     $img = [System.Windows.Forms.Clipboard]::GetImage()
     $ext = [System.IO.Path]::GetExtension($Path).ToLower()
     if ($ext -eq ".jpg" -or $ext -eq ".jpeg") {

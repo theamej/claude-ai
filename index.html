@@ -301,22 +301,16 @@
     </div>
 
     <div class="card">
-      <h2>Generic queries</h2>
-      <div class="hint">Same wording for every tab (unbranded local-search queries). One per line — edit freely.</div>
+      <h2>Query order</h2>
+      <div class="hint">
+        The exact list of queries, in order, generated for every tab — one per line, top to bottom
+        matches # 1, 2, 3… Placeholders: <code class="k">{business}</code> (this tab's own name),
+        <code class="k">{other1}</code> / <code class="k">{other2}</code> (the other two entities,
+        in Client / Competitor 1 / Competitor 2 order), <code class="k">{service}</code>,
+        <code class="k">{city}</code>.
+      </div>
       <label class="field">
-        <textarea id="s-genericQueries" rows="6"></textarea>
-      </label>
-    </div>
-
-    <div class="card">
-      <h2>Branded query templates</h2>
-      <div class="hint">Use <code class="k">{business}</code> — it's swapped for each tab's own name (Client tab uses the client name, Competitor 1's tab uses that competitor's name, etc).</div>
-      <label class="field">
-        <textarea id="s-brandedTemplates" rows="4"></textarea>
-      </label>
-      <label class="checkbox" style="margin-top:12px;">
-        <input type="checkbox" id="s-comparisonEnabled" />
-        Also add head-to-head queries (<span class="mono">{business} vs {other}</span>) against each other entity
+        <textarea id="s-queryTemplates" rows="18"></textarea>
       </label>
     </div>
 
@@ -379,39 +373,60 @@
       service: "", city: "", auditDate: "", preparedBy: ""
     },
     platforms: ["ChatGPT", "Gemini", "Perplexity", "Google AI Overview"],
-    genericQueries: [
+    // The exact, ordered sequence of queries generated for every tab. Placeholders:
+    // {business} = this tab's own name, {other1}/{other2} = the other two entities
+    // (Client/Competitor 1/Competitor 2 order, excluding self), {service}, {city}.
+    queryTemplates: [
       "best {service} in {city}",
       "top {service} providers in {city}",
       "{service} near {city} recommendations",
       "who is the best {service} attorney in {city}",
       "affordable {service} in {city}",
+      "{business} reviews",
+      "is {business} legit",
+      "is {business} good",
+      "{business} vs {other1}",
+      "{business} vs {other2}",
+      "{business} pricing",
+      "{business} services",
+      "{business} location and hours",
       "how much does {service} cost in {city}",
       "how to choose a {service} provider",
       "what to look for in a {service} attorney",
       "{service} for parents",
       "best rated {service} {city} 2026",
       "collaborative divorce help in {city}",
+      "should I hire {business}",
+      "alternatives to {other1}",
+      "{other1} reviews",
+      "{other2} reviews",
       "most recommended {service} the Seattle area",
       "{service} with good reviews near {city}",
       "questions to ask a {service} attorney",
+      "{business} complaints",
+      "who owns {business}",
       "{service} cost vs value {city}",
       "best {service} for limited budget"
     ],
-    brandedTemplates: [
-      "{business} reviews",
-      "is {business} legit",
-      "is {business} good",
-      "{business} pricing",
-      "{business} services",
-      "{business} location and hours",
-      "should I hire {business}",
-      "alternatives to {business}",
-      "{business} complaints",
-      "who owns {business}"
-    ],
-    comparisonEnabled: true,
     entries: { client: {}, comp1: {}, comp2: {} }
   };
+
+  // Kept only to migrate saves from before the single-ordered-list redesign.
+  var LEGACY_GENERIC_QUERIES = [
+    "best {service} in {city}", "top {service} providers in {city}",
+    "{service} near {city} recommendations", "who is the best {service} attorney in {city}",
+    "affordable {service} in {city}", "how much does {service} cost in {city}",
+    "how to choose a {service} provider", "what to look for in a {service} attorney",
+    "{service} for parents", "best rated {service} {city} 2026",
+    "collaborative divorce help in {city}", "most recommended {service} the Seattle area",
+    "{service} with good reviews near {city}", "questions to ask a {service} attorney",
+    "{service} cost vs value {city}", "best {service} for limited budget"
+  ];
+  var LEGACY_BRANDED_TEMPLATES = [
+    "{business} reviews", "is {business} legit", "is {business} good", "{business} pricing",
+    "{business} services", "{business} location and hours", "should I hire {business}",
+    "alternatives to {business}", "{business} complaints", "who owns {business}"
+  ];
 
   var ENTITY_META = {
     client:  { fallback: "Client",        colorVar: "--client" },
@@ -456,6 +471,47 @@
     return m ? m[1].trim() : "";
   }
 
+  // Entries used to be keyed by a query's position in the list, so reordering the
+  // list (as happened here) silently scrambled which score belonged to which
+  // question. This rebuilds a save from before that fix, re-keying every entry by
+  // the query's actual TEXT instead of its old position — reordering is now safe.
+  function migrateLegacyEntries(parsed) {
+    var setup = Object.assign({}, DEFAULT_STATE.setup, parsed.setup || {});
+    function nameFor(key) {
+      var raw = key === "client" ? setup.clientName : key === "comp1" ? setup.competitor1 : setup.competitor2;
+      return (raw && raw.trim()) ? raw.trim() : ENTITY_META[key].fallback;
+    }
+    function legacyFill(tpl, businessName, otherName) {
+      return tpl
+        .replace(/\{business\}/g, businessName)
+        .replace(/\{service\}/g, setup.service || "{service}")
+        .replace(/\{city\}/g, setup.city || "{city}")
+        .replace(/\{other\}/g, otherName || "{other}");
+    }
+    var oldGeneric = parsed.genericQueries || LEGACY_GENERIC_QUERIES;
+    var oldBranded = parsed.brandedTemplates || LEGACY_BRANDED_TEMPLATES;
+    var oldComparisonEnabled = parsed.comparisonEnabled !== undefined ? parsed.comparisonEnabled : true;
+
+    var newEntries = { client: {}, comp1: {}, comp2: {} };
+    ENTITY_ORDER.forEach(function (entityKey) {
+      var name = nameFor(entityKey);
+      var oldQueries = [];
+      oldGeneric.forEach(function (q) { if (q.trim()) oldQueries.push(legacyFill(q, name)); });
+      oldBranded.forEach(function (q) { if (q.trim()) oldQueries.push(legacyFill(q, name)); });
+      if (oldComparisonEnabled) {
+        ENTITY_ORDER.filter(function (k) { return k !== entityKey; }).forEach(function (otherKey) {
+          oldQueries.push(legacyFill("{business} vs {other}", name, nameFor(otherKey)));
+        });
+      }
+      var oldEntriesForEntity = (parsed.entries && parsed.entries[entityKey]) || {};
+      Object.keys(oldEntriesForEntity).forEach(function (qiStr) {
+        var queryText = oldQueries[parseInt(qiStr, 10)];
+        if (queryText) newEntries[entityKey][queryText] = oldEntriesForEntity[qiStr];
+      });
+    });
+    return newEntries;
+  }
+
   function loadState() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -464,10 +520,12 @@
       var merged = JSON.parse(JSON.stringify(DEFAULT_STATE));
       merged.setup = Object.assign({}, merged.setup, parsed.setup || {});
       merged.platforms = parsed.platforms || merged.platforms;
-      merged.genericQueries = parsed.genericQueries || merged.genericQueries;
-      merged.brandedTemplates = parsed.brandedTemplates || merged.brandedTemplates;
-      merged.comparisonEnabled = parsed.comparisonEnabled !== undefined ? parsed.comparisonEnabled : merged.comparisonEnabled;
-      merged.entries = parsed.entries || merged.entries;
+      merged.queryTemplates = parsed.queryTemplates || merged.queryTemplates;
+      if (parsed.queryTemplates) {
+        merged.entries = parsed.entries || merged.entries;
+      } else if (parsed.entries) {
+        merged.entries = migrateLegacyEntries(parsed);
+      }
       return merged;
     } catch (e) {
       return JSON.parse(JSON.stringify(DEFAULT_STATE));
@@ -501,28 +559,30 @@
     return v || null;
   }
 
-  function fillTemplate(tpl, businessName, otherName) {
+  function entityOthers(entityKey) {
+    return ENTITY_ORDER.filter(function (k) { return k !== entityKey; });
+  }
+
+  function fillTemplate(tpl, businessName, other1Name, other2Name) {
     return tpl
       .replace(/\{business\}/g, businessName)
       .replace(/\{service\}/g, state.setup.service || "{service}")
       .replace(/\{city\}/g, state.setup.city || "{city}")
-      .replace(/\{other\}/g, otherName || "{other}");
+      .replace(/\{other1\}/g, other1Name || "{other1}")
+      .replace(/\{other2\}/g, other2Name || "{other2}");
   }
 
+  // The single ordered template list applies uniformly to every tab: {business}
+  // resolves to that tab's own name, {other1}/{other2} to the other two entities.
   function buildQueries(entityKey) {
     var name = entityName(entityKey);
+    var others = entityOthers(entityKey);
+    var other1Name = entityName(others[0]);
+    var other2Name = entityName(others[1]);
     var list = [];
-    state.genericQueries.forEach(function (q) {
-      if (q.trim()) list.push(fillTemplate(q, name));
+    state.queryTemplates.forEach(function (tpl) {
+      if (tpl.trim()) list.push(fillTemplate(tpl, name, other1Name, other2Name));
     });
-    state.brandedTemplates.forEach(function (q) {
-      if (q.trim()) list.push(fillTemplate(q, name));
-    });
-    if (state.comparisonEnabled) {
-      ENTITY_ORDER.filter(function (k) { return k !== entityKey; }).forEach(function (otherKey) {
-        list.push(fillTemplate("{business} vs {other}", name, entityName(otherKey)));
-      });
-    }
     return list;
   }
 
@@ -531,17 +591,19 @@
     var rows = [];
     queries.forEach(function (q, qi) {
       state.platforms.forEach(function (platform, pi) {
-        rows.push({ qi: qi, qnum: qi + 1, query: q, platform: platform, isFirstOfGroup: pi === 0 });
+        rows.push({ qnum: qi + 1, query: q, platform: platform, isFirstOfGroup: pi === 0 });
       });
     });
     return rows;
   }
 
-  function getEntry(entityKey, qi, platform) {
+  // Keyed by the query's actual text (not its position) so reordering, adding, or
+  // removing template lines never scrambles which score belongs to which question.
+  function getEntry(entityKey, queryText, platform) {
     var e = state.entries[entityKey];
-    if (!e[qi]) e[qi] = {};
-    if (!e[qi][platform]) e[qi][platform] = { mentioned: 0, recommended: 0, accurate: 0, cited: 0, screenshot: "" };
-    return e[qi][platform];
+    if (!e[queryText]) e[queryText] = {};
+    if (!e[queryText][platform]) e[queryText][platform] = { mentioned: 0, recommended: 0, accurate: 0, cited: 0, screenshot: "" };
+    return e[queryText][platform];
   }
 
   function rowScore(entry) {
@@ -557,26 +619,26 @@
     return slug(row.platform) + tag + "_q" + String(row.qnum).padStart(2, "0") + ".png";
   }
 
-  function shotKey(entityKey, qi, platform) {
-    return entityKey + "|" + qi + "|" + platform;
+  function shotKey(entityKey, queryText, platform) {
+    return entityKey + "|" + queryText + "|" + platform;
   }
 
   function renderShotCell(entityKey, row, entry) {
-    var key = shotKey(entityKey, row.qi, row.platform);
+    var key = shotKey(entityKey, row.query, row.platform);
     var suggested = suggestScreenshotName(entityKey, row);
     var current = entry.screenshot || "";
     if (editingShotKey === key) {
-      return '<input type="text" class="shot-input" data-shot-input data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" value="' + escapeAttr(current || suggested) + '" />';
+      return '<input type="text" class="shot-input" data-shot-input data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '" value="' + escapeAttr(current || suggested) + '" />';
     }
     var label = current || suggested;
     return '<div class="shot-cell' + (current ? ' has-name' : '') + '">' +
-      '<button type="button" class="shot-btn" data-copy-shot data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" data-name="' + escapeAttr(label) + '" title="Click to copy filename">' + escapeHtml(label) + '</button>' +
-      '<button type="button" class="shot-edit" data-edit-shot data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" title="Edit filename">&#9998;</button>' +
+      '<button type="button" class="shot-btn" data-copy-shot data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '" data-name="' + escapeAttr(label) + '" title="Click to copy filename">' + escapeHtml(label) + '</button>' +
+      '<button type="button" class="shot-edit" data-edit-shot data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '" title="Edit filename">&#9998;</button>' +
       '</div>';
   }
 
   function analyzeAnswerText(entityKey, row, text) {
-    var entry = getEntry(entityKey, row.qi, row.platform);
+    var entry = getEntry(entityKey, row.query, row.platform);
     entry.answerText = text;
 
     var name = entityName(entityKey);
@@ -634,7 +696,7 @@
     saveState();
   }
 
-  function answerKey(entityKey, qi, platform) { return shotKey(entityKey, qi, platform); }
+  function answerKey(entityKey, queryText, platform) { return shotKey(entityKey, queryText, platform); }
 
   async function callClaudeForAnalysis(businessName, text) {
     var key = getApiKey();
@@ -677,10 +739,10 @@
   }
 
   async function refineWithClaude(entityKey, row, text) {
-    var key = answerKey(entityKey, row.qi, row.platform);
+    var key = answerKey(entityKey, row.query, row.platform);
     analyzingKey = key;
     renderEntityPanel(entityKey);
-    var entry = getEntry(entityKey, row.qi, row.platform);
+    var entry = getEntry(entityKey, row.query, row.platform);
     try {
       var parsed = await callClaudeForAnalysis(entityName(entityKey), text);
       entry.mentioned = parsed.mentioned ? 1 : 0;
@@ -701,13 +763,13 @@
 
   function renderAnswerCell(entityKey, row, entry) {
     var has = !!(entry.answerText && entry.answerText.trim());
-    return '<button type="button" class="btn small' + (has ? " answered" : "") + '" data-paste-toggle data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '">' +
+    return '<button type="button" class="btn small' + (has ? " answered" : "") + '" data-paste-toggle data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '">' +
       (has ? "&#10003; Answer pasted" : "+ Paste answer") + '</button>';
   }
 
   function renderAnswerRow(entityKey, row, entry, colCount) {
     var text = entry.answerText || "";
-    var key = answerKey(entityKey, row.qi, row.platform);
+    var key = answerKey(entityKey, row.query, row.platform);
     var isAnalyzing = analyzingKey === key;
     var summary = "";
     if (entry.answerText) {
@@ -728,9 +790,9 @@
     }
     return '<tr class="answer-row"><td colspan="' + colCount + '">' +
       '<div class="answer-box">' +
-      '<textarea class="answer-textarea" data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '" placeholder="Paste the AI\'s full answer here…" rows="5"' + (isAnalyzing ? " disabled" : "") + '>' + escapeHtml(text) + '</textarea>' +
+      '<textarea class="answer-textarea" data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '" placeholder="Paste the AI\'s full answer here…" rows="5"' + (isAnalyzing ? " disabled" : "") + '>' + escapeHtml(text) + '</textarea>' +
       '<div class="btn-row">' +
-      '<button type="button" class="btn small primary" data-analyze-answer data-entity="' + entityKey + '" data-qi="' + row.qi + '" data-platform="' + escapeAttr(row.platform) + '"' + (isAnalyzing ? " disabled" : "") + '>' + (isAnalyzing ? "Asking Claude…" : "Analyze &amp; fill") + '</button>' +
+      '<button type="button" class="btn small primary" data-analyze-answer data-entity="' + entityKey + '" data-query="' + escapeAttr(row.query) + '" data-platform="' + escapeAttr(row.platform) + '"' + (isAnalyzing ? " disabled" : "") + '>' + (isAnalyzing ? "Asking Claude…" : "Analyze &amp; fill") + '</button>' +
       '<button type="button" class="btn small ghost" data-close-answer>Close</button>' +
       '</div>' +
       (summary ? '<div class="answer-summary">' + summary + '</div>' : "") +
@@ -786,9 +848,7 @@
     document.getElementById("s-city").value = state.setup.city;
     document.getElementById("s-auditDate").value = state.setup.auditDate;
     document.getElementById("s-preparedBy").value = state.setup.preparedBy;
-    document.getElementById("s-genericQueries").value = state.genericQueries.join("\n");
-    document.getElementById("s-brandedTemplates").value = state.brandedTemplates.join("\n");
-    document.getElementById("s-comparisonEnabled").checked = !!state.comparisonEnabled;
+    document.getElementById("s-queryTemplates").value = state.queryTemplates.join("\n");
     document.getElementById("s-apiKey").value = getApiKey();
     renderPlatformChips();
   }
@@ -823,16 +883,8 @@
         if (activeTab !== "setup") render();
       });
     });
-    document.getElementById("s-genericQueries").addEventListener("input", function (e) {
-      state.genericQueries = e.target.value.split("\n");
-      saveState();
-    });
-    document.getElementById("s-brandedTemplates").addEventListener("input", function (e) {
-      state.brandedTemplates = e.target.value.split("\n");
-      saveState();
-    });
-    document.getElementById("s-comparisonEnabled").addEventListener("change", function (e) {
-      state.comparisonEnabled = e.target.checked;
+    document.getElementById("s-queryTemplates").addEventListener("input", function (e) {
+      state.queryTemplates = e.target.value.split("\n");
       saveState();
     });
     document.getElementById("add-platform-form").addEventListener("submit", function (e) {
@@ -876,7 +928,7 @@
     var totalScore = 0, maxScore = rows.length * 5;
     var mentionedCount = 0, recommendedCount = 0, citedCount = 0, wrongCount = 0, scoredRows = 0;
     rows.forEach(function (r) {
-      var entry = getEntry(entityKey, r.qi, r.platform);
+      var entry = getEntry(entityKey, r.query, r.platform);
       var sc = rowScore(entry);
       totalScore += sc;
       if (entry.mentioned) mentionedCount++;
@@ -910,7 +962,7 @@
         '<th>#</th><th>Query</th><th>Platform</th><th>Answer</th><th>Mentioned?</th><th>Recommended?</th><th>Accurate?</th><th>Cited?</th><th>Score</th><th>Screenshot file</th>' +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
-        var entry = getEntry(entityKey, r.qi, r.platform);
+        var entry = getEntry(entityKey, r.query, r.platform);
         var sc = rowScore(entry);
         var recLabel = entry.recommended ? "Yes ×2" : "No";
         if (entry.recommended && entry.recommendedAuto) recLabel = "Yes ×2 (auto)";
@@ -919,14 +971,14 @@
         html += '<td class="qtext">' + (r.isFirstOfGroup ? escapeHtml(r.query) : '<span class="fade">' + escapeHtml(r.query) + '</span>') + '</td>';
         html += '<td class="platform">' + escapeHtml(r.platform) + '</td>';
         html += '<td>' + renderAnswerCell(entityKey, r, entry) + '</td>';
-        html += '<td><button type="button" class="toggle" data-field="mentioned" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.mentioned + '">' + (entry.mentioned ? "Yes" : "No") + '</button></td>';
-        html += '<td><button type="button" class="toggle' + (entry.recommendedAuto ? " auto" : "") + '" data-field="recommended" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.recommended + '" title="Worth 2 points">' + recLabel + '</button></td>';
-        html += '<td>' + triToggle(entityKey, r.qi, r.platform, entry.accurate) + '</td>';
-        html += '<td><button type="button" class="toggle" data-field="cited" data-entity="' + entityKey + '" data-qi="' + r.qi + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.cited + '">' + (entry.cited ? "Yes" : "No") + '</button></td>';
+        html += '<td><button type="button" class="toggle" data-field="mentioned" data-entity="' + entityKey + '" data-query="' + escapeAttr(r.query) + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.mentioned + '">' + (entry.mentioned ? "Yes" : "No") + '</button></td>';
+        html += '<td><button type="button" class="toggle' + (entry.recommendedAuto ? " auto" : "") + '" data-field="recommended" data-entity="' + entityKey + '" data-query="' + escapeAttr(r.query) + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.recommended + '" title="Worth 2 points">' + recLabel + '</button></td>';
+        html += '<td>' + triToggle(entityKey, r.query, r.platform, entry.accurate) + '</td>';
+        html += '<td><button type="button" class="toggle" data-field="cited" data-entity="' + entityKey + '" data-query="' + escapeAttr(r.query) + '" data-platform="' + escapeAttr(r.platform) + '" data-on="' + entry.cited + '">' + (entry.cited ? "Yes" : "No") + '</button></td>';
         html += '<td class="score" style="color:' + (sc < 0 ? "var(--critical)" : sc >= 4 ? "var(--good)" : "inherit") + '">' + sc + '</td>';
         html += '<td class="shot">' + renderShotCell(entityKey, r, entry) + '</td>';
         html += '</tr>';
-        if (expandedAnswerKey === answerKey(entityKey, r.qi, r.platform)) {
+        if (expandedAnswerKey === answerKey(entityKey, r.query, r.platform)) {
           html += renderAnswerRow(entityKey, r, entry, colCount);
         }
       });
@@ -945,9 +997,9 @@
       '</div>';
   }
 
-  function triToggle(entityKey, qi, platform, val) {
+  function triToggle(entityKey, queryText, platform, val) {
     function cls(v) { return v === val ? "sel-" + v : ""; }
-    return '<div class="toggle tri" data-field="accurate" data-entity="' + entityKey + '" data-qi="' + qi + '" data-platform="' + escapeAttr(platform) + '">' +
+    return '<div class="toggle tri" data-field="accurate" data-entity="' + entityKey + '" data-query="' + escapeAttr(queryText) + '" data-platform="' + escapeAttr(platform) + '">' +
       '<span data-val="-1" class="' + cls(-1) + '">Wrong</span>' +
       '<span data-val="0" class="' + cls(0) + '">N/A</span>' +
       '<span data-val="1" class="' + cls(1) + '">OK</span>' +
@@ -962,7 +1014,7 @@
   function escapeAttr(s) { return escapeHtml(s); }
 
   function commitShotEdit(entityKey, input) {
-    var entry = getEntry(entityKey, input.getAttribute("data-qi"), input.getAttribute("data-platform"));
+    var entry = getEntry(entityKey, input.getAttribute("data-query"), input.getAttribute("data-platform"));
     entry.screenshot = input.value.trim();
     editingShotKey = null;
     saveState();
@@ -974,10 +1026,10 @@
     panel.addEventListener("click", function (e) {
       var shotBtn = e.target.closest("[data-copy-shot]");
       if (shotBtn) {
-        var qi = shotBtn.getAttribute("data-qi");
+        var shotQuery = shotBtn.getAttribute("data-query");
         var platform = shotBtn.getAttribute("data-platform");
         var name = shotBtn.getAttribute("data-name");
-        var entry = getEntry(entityKey, qi, platform);
+        var entry = getEntry(entityKey, shotQuery, platform);
         entry.screenshot = name;
         saveState();
         copyText(name, 'Copied "' + name + '"');
@@ -986,7 +1038,7 @@
       }
       var editBtn = e.target.closest("[data-edit-shot]");
       if (editBtn) {
-        editingShotKey = shotKey(entityKey, editBtn.getAttribute("data-qi"), editBtn.getAttribute("data-platform"));
+        editingShotKey = shotKey(entityKey, editBtn.getAttribute("data-query"), editBtn.getAttribute("data-platform"));
         renderEntityPanel(entityKey);
         var input = panel.querySelector('[data-shot-input]');
         if (input) { input.focus(); input.select(); }
@@ -994,7 +1046,7 @@
       }
       var pasteToggle = e.target.closest("[data-paste-toggle]");
       if (pasteToggle) {
-        var pKey = answerKey(entityKey, pasteToggle.getAttribute("data-qi"), pasteToggle.getAttribute("data-platform"));
+        var pKey = answerKey(entityKey, pasteToggle.getAttribute("data-query"), pasteToggle.getAttribute("data-platform"));
         expandedAnswerKey = expandedAnswerKey === pKey ? null : pKey;
         renderEntityPanel(entityKey);
         var ta = panel.querySelector(".answer-textarea");
@@ -1009,14 +1061,14 @@
       }
       var analyzeBtn = e.target.closest("[data-analyze-answer]");
       if (analyzeBtn) {
-        var aQi = analyzeBtn.getAttribute("data-qi");
+        var aQuery = analyzeBtn.getAttribute("data-query");
         var aPlatform = analyzeBtn.getAttribute("data-platform");
-        var textarea = panel.querySelector('.answer-textarea[data-qi="' + aQi + '"][data-platform="' + CSS.escape(aPlatform) + '"]');
+        var textarea = panel.querySelector('.answer-textarea[data-query="' + CSS.escape(aQuery) + '"][data-platform="' + CSS.escape(aPlatform) + '"]');
         var text = textarea ? textarea.value : "";
         if (!text.trim()) return;
-        analyzeAnswerText(entityKey, { qi: aQi, platform: aPlatform }, text);
+        analyzeAnswerText(entityKey, { query: aQuery, platform: aPlatform }, text);
         if (getApiKey()) {
-          refineWithClaude(entityKey, { qi: aQi, platform: aPlatform }, text);
+          refineWithClaude(entityKey, { query: aQuery, platform: aPlatform }, text);
         } else {
           renderEntityPanel(entityKey);
         }
@@ -1031,9 +1083,9 @@
         return;
       }
       var field = btn.getAttribute("data-field");
-      var toggleQi = btn.getAttribute("data-qi");
+      var toggleQuery = btn.getAttribute("data-query");
       var togglePlatform = btn.getAttribute("data-platform");
-      var toggleEntry = getEntry(entityKey, toggleQi, togglePlatform);
+      var toggleEntry = getEntry(entityKey, toggleQuery, togglePlatform);
       if (field === "accurate") {
         var span = e.target.closest("span[data-val]");
         if (span) {
@@ -1066,7 +1118,7 @@
     var rows = buildRows(entityKey);
     var total = 0, mentioned = 0, recommended = 0, cited = 0, wrong = 0;
     rows.forEach(function (r) {
-      var entry = getEntry(entityKey, r.qi, r.platform);
+      var entry = getEntry(entityKey, r.query, r.platform);
       total += rowScore(entry);
       if (entry.mentioned) mentioned++;
       if (entry.recommended) recommended++;
@@ -1113,7 +1165,7 @@
       ENTITY_ORDER.forEach(function (k) {
         var rows = stats[k].rows.filter(function (r) { return r.platform === platform; });
         var sum = 0;
-        rows.forEach(function (r) { sum += rowScore(getEntry(k, r.qi, r.platform)); });
+        rows.forEach(function (r) { sum += rowScore(getEntry(k, r.query, r.platform)); });
         var avg = rows.length ? sum / rows.length : 0;
         var w = Math.max(0, (avg / 5) * 40);
         html += '<td class="num"><span class="inline-bar" style="width:' + w.toFixed(0) + 'px; background:var(' + ENTITY_META[k].colorVar + ')"></span>' + avg.toFixed(1) + '</td>';
@@ -1122,20 +1174,24 @@
     });
     html += '</tbody></table></div></div>';
 
-    // generic query head-to-head
-    var generic = state.genericQueries.filter(function (q) { return q.trim(); });
-    if (generic.length) {
-      html += '<div class="card"><h2>Head-to-head on shared queries</h2><div class="hint">These generic queries run identically for every tab — direct comparison, summed across platforms.</div>';
+    // Shared (unbranded) queries: templates with no {business}/{other1}/{other2}
+    // placeholder resolve to identical text on every tab, so they're directly
+    // comparable head-to-head.
+    var shared = state.queryTemplates.filter(function (tpl) {
+      return tpl.trim() && !/\{business\}|\{other1\}|\{other2\}/.test(tpl);
+    });
+    if (shared.length) {
+      html += '<div class="card"><h2>Head-to-head on shared queries</h2><div class="hint">These queries run identically for every tab — direct comparison, summed across platforms.</div>';
       html += '<div style="overflow-x:auto; overflow-y:visible;"><table class="compare"><thead><tr><th>Query</th>';
       ENTITY_ORDER.forEach(function (k) { html += '<th>' + escapeHtml(entityName(k)) + '</th>'; });
       html += '</tr></thead><tbody>';
-      generic.forEach(function (qTpl, qi) {
-        var qText = fillTemplate(qTpl, entityName("client"));
+      shared.forEach(function (qTpl) {
+        var qText = fillTemplate(qTpl, "", "", "");
         html += '<tr><td class="qtext">' + escapeHtml(qText) + '</td>';
         ENTITY_ORDER.forEach(function (k) {
           var sum = 0, max = 0;
           state.platforms.forEach(function (platform) {
-            sum += rowScore(getEntry(k, qi, platform));
+            sum += rowScore(getEntry(k, qText, platform));
             max += 5;
           });
           html += '<td class="num">' + sum + ' <span style="color:var(--text-muted)">/ ' + max + '</span></td>';
@@ -1155,7 +1211,7 @@
     var header = ["#", "Query", "Platform", "Mentioned?", "Recommended?", "Accurate?", "Cited?", "Score (max 5)", "Screenshot file"];
     var lines = [header.join(delimiter)];
     rows.forEach(function (r) {
-      var entry = getEntry(entityKey, r.qi, r.platform);
+      var entry = getEntry(entityKey, r.query, r.platform);
       var sc = rowScore(entry);
       var cells = [r.qnum, r.query, r.platform, entry.mentioned, entry.recommended, entry.accurate, entry.cited, sc, entry.screenshot || ""];
       if (delimiter === ",") {

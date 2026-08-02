@@ -62,6 +62,20 @@ if ($found) {
 FileDelete, %HelperPath%
 FileAppend, %HelperScript%, %HelperPath%
 
+; Second helper: re-encodes an already-captured PNG to JPEG when that's the
+; final format requested (a plain rename would produce a corrupt file).
+ConvertHelperPath := A_Temp . "\ScreenshotAutoSave_ConvertImage.ps1"
+ConvertHelperScript =
+(
+param([string]$Src, [string]$Dest)
+Add-Type -AssemblyName System.Drawing
+$img = [System.Drawing.Image]::FromFile($Src)
+$img.Save($Dest, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$img.Dispose()
+)
+FileDelete, %ConvertHelperPath%
+FileAppend, %ConvertHelperScript%, %ConvertHelperPath%
+
 TrayTip, Screenshot Auto-Save, Running. Press Print Screen (or Alt+Print Screen for the active window) to save a screenshot to:`n%SaveFolder%, 4, 1
 return
 
@@ -101,6 +115,22 @@ SaveClipboardTo(path) {
     RunWait, powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%HelperPath%" "%path%",, Hide
 }
 
+ConvertImage(src, dest) {
+    global ConvertHelperPath
+    RunWait, powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ConvertHelperPath%" "%src%" "%dest%",, Hide
+}
+
+; tempPath is always a lossless PNG capture; finalPath is whatever the user chose.
+; A same-format finish is just a rename; a different format needs re-encoding.
+FinishSave(tempPath, finalPath) {
+    if RegExMatch(finalPath, "i)\.png$") {
+        FileMove, %tempPath%, %finalPath%, 1
+    } else {
+        ConvertImage(tempPath, finalPath)
+        FileDelete, %tempPath%
+    }
+}
+
 ; Shows the "save as" prompt (pre-filled with the timestamp name) and returns the
 ; chosen path, or "" if the user cancelled.
 PromptAndBuildPath() {
@@ -114,33 +144,44 @@ PromptAndBuildPath() {
     return BuildPath(userName)
 }
 
-; Plain Print Screen: full-screen capture. The leading ~ lets Windows still do
-; its normal clipboard copy — this script just persists that image to a file.
-~PrintScreen::
+; Grabs whatever image is on the clipboard into a private temp file RIGHT NOW,
+; before any dialog opens — so copying text elsewhere afterward (like a
+; filename from another app) can't clobber it by overwriting the clipboard.
+CaptureToTemp() {
+    tempPath := A_Temp . "\ScreenshotAutoSave_capture_" . A_TickCount . ".png"
+    SaveClipboardTo(tempPath)
+    if FileExist(tempPath)
+        return tempPath
+    return ""
+}
+
+HandlePrintScreen() {
     Sleep, 150
-    path := PromptAndBuildPath()
-    if (path = "") {
+    tempPath := CaptureToTemp()
+    if (tempPath = "") {
+        TrayTip, Screenshot Auto-Save, No image was on the clipboard to save., 2, 2
+        return
+    }
+    finalPath := PromptAndBuildPath()
+    if (finalPath = "") {
+        FileDelete, %tempPath%
         TrayTip, Screenshot Auto-Save, Cancelled — nothing saved., 2, 1
         return
     }
-    SaveClipboardTo(path)
-    if FileExist(path)
-        TrayTip, Screenshot saved, %path%, 2, 1
+    FinishSave(tempPath, finalPath)
+    if FileExist(finalPath)
+        TrayTip, Screenshot saved, %finalPath%, 2, 1
     else
-        TrayTip, Screenshot Auto-Save, No image was on the clipboard to save., 2, 2
+        TrayTip, Screenshot Auto-Save, Something went wrong saving the file., 2, 2
+}
+
+; Plain Print Screen: full-screen capture. The leading ~ lets Windows still do
+; its normal clipboard copy — this script just persists that image to a file.
+~PrintScreen::
+    HandlePrintScreen()
 return
 
 ; Alt+Print Screen: active-window capture, same idea.
 ~!PrintScreen::
-    Sleep, 150
-    path := PromptAndBuildPath()
-    if (path = "") {
-        TrayTip, Screenshot Auto-Save, Cancelled — nothing saved., 2, 1
-        return
-    }
-    SaveClipboardTo(path)
-    if FileExist(path)
-        TrayTip, Screenshot saved, %path%, 2, 1
-    else
-        TrayTip, Screenshot Auto-Save, No image was on the clipboard to save., 2, 2
+    HandlePrintScreen()
 return

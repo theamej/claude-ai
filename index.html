@@ -553,7 +553,8 @@
   }
 
   function suggestScreenshotName(entityKey, row) {
-    return slug(row.platform) + "_" + entityKey + "_q" + String(row.qnum).padStart(2, "0") + ".png";
+    var tag = entityKey === "client" ? "" : "_" + entityKey;
+    return slug(row.platform) + tag + "_q" + String(row.qnum).padStart(2, "0") + ".png";
   }
 
   function shotKey(entityKey, qi, platform) {

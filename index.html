@@ -439,7 +439,8 @@
     "i recommend", "i'd recommend", "we recommend", "highly recommend", "strongly recommend",
     "strongly suggest", "best option", "best choice", "top choice", "top pick", "top-rated",
     "great option", "great choice", "would suggest", "i suggest", "go with", "worth considering",
-    "stands out", "one of the best", "solid choice", "great choice"
+    "stands out", "stand out", "consistently stand", "one of the best", "solid choice",
+    "strong choice", "strong option", "these firms stand out", "these stand out"
   ];
 
   function normalizeForMatch(s) {
@@ -610,9 +611,12 @@
     // A business that's never named in the text cannot be "recommended" in it —
     // scoring a phrase found elsewhere in the answer would attribute someone
     // else's recommendation to this business, so skip the phrase search entirely.
+    // The "before" side is wider than "after": list-style answers often state a
+    // recommendation once in an intro sentence ("these firms consistently stand
+    // out...") well ahead of where each individual business is actually named.
     var foundPhrase = null;
     if (mentionIndex !== -1) {
-      var start = Math.max(0, mentionIndex - 200);
+      var start = Math.max(0, mentionIndex - 600);
       var end = Math.min(normText.length, mentionIndex + matchLen + 200);
       var windowText = normText.slice(start, end);
       for (var i = 0; i < RECOMMEND_PHRASES.length; i++) {
